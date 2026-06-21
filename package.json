@@ -1,0 +1,30 @@
+{
+  "name": "wh11ed-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Backend microservice for cloud backup of wh11ed Game Tracker history. Yandex Cloud Functions + YDB serverless, OAuth (Google/Yandex), finished-game backup.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && node scripts/bundle.mjs",
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts",
+    "migrate": "node --env-file-if-exists=.env --import tsx scripts/migrate.ts",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.5",
+    "hono": "^4.6.14",
+    "ydb-sdk": "^5.10.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.24.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

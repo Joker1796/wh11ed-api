@@ -1,0 +1,34 @@
+openapi: 3.0.0
+info:
+  title: wh11ed-api
+  version: 0.1.0
+
+# Single greedy route: the gateway forwards every method/path to the function, which does its
+# own routing (Hono) and CORS. ${function_id} / ${gateway_sa_id} are filled by Terraform
+# templatefile(). A rate limit caps abuse/cost.
+x-yc-apigateway:
+  rate_limit:
+    - all_requests:
+        rpm: 600
+
+paths:
+  /:
+    x-yc-apigateway-any-method:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${function_id}
+        tag: $latest
+        service_account_id: ${gateway_sa_id}
+  /{proxy+}:
+    x-yc-apigateway-any-method:
+      parameters:
+        - name: proxy
+          in: path
+          required: true
+          schema:
+            type: string
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${function_id}
+        tag: $latest
+        service_account_id: ${gateway_sa_id}
