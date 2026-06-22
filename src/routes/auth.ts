@@ -83,7 +83,11 @@ authRoutes.get('/:provider/callback', async (c) => {
     setCookie(c, REFRESH_COOKIE, cookieValue, {
       httpOnly: true,
       secure: isSecure(),
-      sameSite: 'Strict',
+      // The SPA (wh11ed.ru) and API (api.wh11ed.ru) are different origins, so the refresh fetch is
+      // cross-origin — the cookie must be SameSite=None (+Secure) to be sent. CSRF is still covered
+      // by the originAllowed() allow-list and by /games being Bearer-only. Lax in local http dev,
+      // where None+insecure would be rejected by the browser.
+      sameSite: isSecure() ? 'None' : 'Lax',
       path: '/auth',
       domain: config.cookieDomain || undefined,
       maxAge: config.refreshTokenTtl,
