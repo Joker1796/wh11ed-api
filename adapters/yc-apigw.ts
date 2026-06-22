@@ -25,7 +25,11 @@ export interface YcHttpResponse {
 type FetchLike = (req: Request) => Response | Promise<Response>
 
 function buildUrl(event: YcHttpEvent): string {
-  const path = event.path ?? event.url ?? '/'
+  // Yandex API Gateway sends the REAL request path in `event.url`; `event.path` is the matched
+  // operation template (e.g. "/{proxy+}" for the greedy proxy route), which must NOT be used for
+  // routing. Take the path part of url (drop any query it carries) and rebuild the query from the
+  // structured params below for canonical encoding. Fall back to `path` for non-gateway callers/tests.
+  const path = (event.url ?? event.path ?? '/').split('?')[0]
   const qs = new URLSearchParams()
   if (event.multiValueQueryStringParameters) {
     for (const [k, vals] of Object.entries(event.multiValueQueryStringParameters)) {

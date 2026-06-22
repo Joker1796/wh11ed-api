@@ -7,9 +7,9 @@ info:
 # own routing (Hono) and CORS. ${function_id} / ${gateway_sa_id} are filled by Terraform
 # templatefile(). A rate limit caps abuse/cost.
 x-yc-apigateway:
-  rate_limit:
-    - all_requests:
-        rpm: 600
+  rateLimit:
+    allRequests:
+      rpm: 600
 
 paths:
   /:

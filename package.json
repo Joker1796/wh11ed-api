@@ -2,7 +2,7 @@
   "name": "wh11ed-api",
   "version": "0.1.0",
   "private": true,
-  "description": "Backend microservice for cloud backup of wh11ed Game Tracker history. Yandex Cloud Functions + YDB serverless, OAuth (Google/Yandex), finished-game backup.",
+  "description": "Backend microservice for cloud backup of wh11ed Game Tracker history. Yandex Cloud Functions + YDB serverless, OAuth (Yandex), finished-game backup.",
   "type": "module",
   "engines": {
     "node": ">=22"

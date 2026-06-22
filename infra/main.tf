@@ -49,14 +49,6 @@ resource "yandex_lockbox_secret_version" "main" {
     text_value = var.jwt_signing_key
   }
   entries {
-    key        = "GOOGLE_CLIENT_ID"
-    text_value = var.google_client_id
-  }
-  entries {
-    key        = "GOOGLE_CLIENT_SECRET"
-    text_value = var.google_client_secret
-  }
-  entries {
     key        = "YANDEX_CLIENT_ID"
     text_value = var.yandex_client_id
   }
@@ -93,8 +85,6 @@ resource "yandex_function" "api" {
   dynamic "secrets" {
     for_each = toset([
       "JWT_SIGNING_KEY",
-      "GOOGLE_CLIENT_ID",
-      "GOOGLE_CLIENT_SECRET",
       "YANDEX_CLIENT_ID",
       "YANDEX_CLIENT_SECRET",
     ])
@@ -124,9 +114,16 @@ resource "yandex_api_gateway" "main" {
     gateway_sa_id = yandex_iam_service_account.gateway.id
   })
 
-  custom_domains {
-    fqdn           = var.custom_domain
-    certificate_id = yandex_cm_certificate.api.id
+  # Attaching the custom domain requires the managed cert to already be Issued (DNS-validated).
+  # On the first deploy the cert is still validating, so apply once with
+  # -var attach_custom_domain=false to create the gateway + learn its default domain, set up DNS,
+  # wait for the cert to reach Issued, then apply again with the default (true) to attach the domain.
+  dynamic "custom_domains" {
+    for_each = var.attach_custom_domain ? [1] : []
+    content {
+      fqdn           = var.custom_domain
+      certificate_id = yandex_cm_certificate.api.id
+    }
   }
 
   depends_on = [yandex_resourcemanager_folder_iam_member.gateway_invoker]
