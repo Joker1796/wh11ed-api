@@ -26,7 +26,8 @@ Request/Response. Porting to another runtime later = a new adapter; `src/` is un
 1. SPA → `GET /auth/{provider}/login` — function stores `state`+PKCE in a short signed cookie, redirects to provider.
 2. Provider → `GET /auth/{provider}/callback` — function exchanges the code **server-side**
    (client secret from Lockbox), fetches identity, upserts the user, creates a session, sets the
-   **refresh** cookie (`HttpOnly; Secure; SameSite=Strict; Path=/auth`), and 302s back to the SPA.
+   **refresh** cookie (`HttpOnly; Secure; SameSite=None; Path=/auth` — `None` is intentional and
+   required for the flow; don't change it to `Strict`), and 302s back to the SPA.
 3. SPA → `POST /auth/refresh` (`credentials:'include'`) — rotates the refresh token, returns a
    short-lived **access** JWT kept in memory and sent as `Authorization: Bearer` on API calls.
 

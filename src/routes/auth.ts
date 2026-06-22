@@ -83,10 +83,10 @@ authRoutes.get('/:provider/callback', async (c) => {
     setCookie(c, REFRESH_COOKIE, cookieValue, {
       httpOnly: true,
       secure: isSecure(),
-      // The SPA (wh11ed.ru) and API (api.wh11ed.ru) are different origins, so the refresh fetch is
-      // cross-origin — the cookie must be SameSite=None (+Secure) to be sent. CSRF is still covered
-      // by the originAllowed() allow-list and by /games being Bearer-only. Lax in local http dev,
-      // where None+insecure would be rejected by the browser.
+      // SameSite=None (+Secure) is DELIBERATE and load-bearing: an earlier Strict broke the
+      // deployed login/refresh flow, so do NOT change it back. CSRF is still covered by the
+      // originAllowed() allow-list and by /games being Bearer-only. Lax in local http dev, where
+      // None+insecure would be rejected by the browser.
       sameSite: isSecure() ? 'None' : 'Lax',
       path: '/auth',
       domain: config.cookieDomain || undefined,
@@ -112,6 +112,9 @@ authRoutes.post('/refresh', async (c) => {
   setCookie(c, REFRESH_COOKIE, rotated.newCookie, {
     httpOnly: true,
     secure: isSecure(),
+    // NB: the login callback issues this cookie SameSite=None (see there); this re-set uses
+    // Strict. The asymmetry is harmless because the SPA and API are the same site, and login
+    // works as deployed — don't "normalize" the two without re-testing the real refresh flow.
     sameSite: 'Strict',
     path: '/auth',
     domain: config.cookieDomain || undefined,
