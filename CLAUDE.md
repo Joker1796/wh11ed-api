@@ -66,7 +66,12 @@ fields used by the history list view into dedicated columns.
 The cookie value is `sessionId.secret` so refresh is an O(1) PK lookup. Access tokens are
 short-lived JWTs (`src/auth/jwt.ts`); `requireAuth` middleware (`src/auth/middleware.ts`) verifies
 the Bearer token and sets `c.var.userId`. `/games*` is Bearer-only (not CSRF-able); the refresh
-cookie is `HttpOnly; Secure; SameSite=Strict; Path=/auth`.
+cookie is `HttpOnly; Secure; Path=/auth`. **SameSite is deliberately `None` at issue** (login
+callback, over HTTPS) — an earlier `Strict` broke the deployed login/refresh flow, so do **not**
+change it back. CSRF is still covered: `originAllowed()` runs on both `/auth` POST endpoints and
+`/games*` is Bearer-only. (The `/auth/refresh` handler currently re-sets the cookie `Strict`; this
+asymmetry is harmless because the SPA and API are the same site — don't "normalize" it without
+re-testing real login.)
 
 ## Build & deploy specifics
 
