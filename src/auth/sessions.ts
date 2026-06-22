@@ -1,28 +1,17 @@
-import { randomBytes, createHash } from 'node:crypto'
 import { TypedValues } from 'ydb-sdk'
 import { query } from '../db/driver.js'
 import { config } from '../config.js'
+import { hashToken, newToken, newId, evaluateRefresh } from './refresh-logic.js'
 
 // Refresh tokens are opaque random strings. We store only their SHA-256 hash, and rotate the
 // token on every refresh (single-use). The raw token lives only in the client's HttpOnly cookie.
+// The pure crypto/decision helpers live in ./refresh-logic.ts so they're unit-testable.
 
 export interface SessionRow {
   session_id: string
   user_id: string
   refresh_hash: string
   expires_at: Date | string | null
-}
-
-function hashToken(raw: string): string {
-  return createHash('sha256').update(raw).digest('hex')
-}
-
-function newToken(): string {
-  return randomBytes(32).toString('base64url')
-}
-
-function newId(): string {
-  return randomBytes(16).toString('hex')
 }
 
 export async function createSession(userId: string): Promise<string> {
@@ -72,14 +61,9 @@ export async function rotateSession(
   const row = rows[0]
   if (!row) return null
 
-  const expMs = row.expires_at ? new Date(row.expires_at).getTime() : 0
-  if (!expMs || expMs < Date.now()) {
-    await destroySession(sessionId)
-    return null
-  }
-
-  if (row.refresh_hash !== hashToken(raw)) {
-    // Token does not match the current secret → likely a replayed/stolen old token. Burn it.
+  if (evaluateRefresh(row, raw, Date.now()) !== 'ok') {
+    // Expired, or the token doesn't match the current secret (likely a replayed/stolen old
+    // token) → burn the session.
     await destroySession(sessionId)
     return null
   }

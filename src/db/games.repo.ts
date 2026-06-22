@@ -33,7 +33,7 @@ export async function listGames(userId: string, limit: number): Promise<GameMeta
      DECLARE $limit AS Uint64;
      SELECT game_id, created_at, finished_at, result_summary, players
      FROM games WHERE user_id = $user_id
-     ORDER BY finished_at DESC
+     ORDER BY finished_at DESC, game_id DESC
      LIMIT $limit;`,
     { $user_id: TypedValues.utf8(userId), $limit: TypedValues.uint64(limit) },
   )
@@ -55,7 +55,13 @@ export async function getGameBlob(userId: string, gameId: string): Promise<unkno
   )
   const blob = rows[0]?.blob
   if (!blob) return null
-  return JSON.parse(blob)
+  try {
+    return JSON.parse(blob)
+  } catch {
+    // A corrupted blob shouldn't surface as a 500; treat it as absent (404) and log for triage.
+    console.error(`[games] corrupt blob for user=${userId} game=${gameId}`)
+    return null
+  }
 }
 
 export async function upsertGame(input: {

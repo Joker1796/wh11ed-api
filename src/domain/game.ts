@@ -12,9 +12,12 @@ const playerSchema = z
   })
   .passthrough()
 
+// Game id constraint, shared between the payload envelope and the URL route param.
+export const gameIdSchema = z.string().min(1).max(64)
+
 export const gameSchema = z
   .object({
-    id: z.string().min(1).max(64),
+    id: gameIdSchema,
     createdAt: z.string().datetime().optional(),
     finishedAt: z.string().datetime().optional(),
     phase: z.string().max(32).optional(),

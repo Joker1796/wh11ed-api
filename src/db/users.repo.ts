@@ -14,7 +14,17 @@ export async function getUser(userId: string): Promise<User | null> {
      SELECT user_id, email, display_name, created_at FROM users WHERE user_id = $user_id;`,
     { $user_id: TypedValues.utf8(userId) },
   )
-  return rows[0] ?? null
+  const row = rows[0]
+  if (!row) return null
+  // Absent values are stored as '' (codebase convention, mirroring games.repo); normalize
+  // back to null on read so the `string | null` contract distinguishes "no email" from a
+  // genuine value.
+  return {
+    user_id: row.user_id,
+    email: row.email || null,
+    display_name: row.display_name || null,
+    created_at: row.created_at || null,
+  }
 }
 
 /**
@@ -40,7 +50,7 @@ export async function upsertUser(input: {
         $display_name: TypedValues.utf8(input.displayName ?? ''),
       },
     )
-    return { ...existing, email: input.email ?? '', display_name: input.displayName ?? '' }
+    return { ...existing, email: input.email ?? null, display_name: input.displayName ?? null }
   }
 
   await query(
@@ -59,8 +69,8 @@ export async function upsertUser(input: {
   )
   return {
     user_id: input.userId,
-    email: input.email ?? '',
-    display_name: input.displayName ?? '',
+    email: input.email ?? null,
+    display_name: input.displayName ?? null,
     created_at: input.nowIso,
   }
 }
