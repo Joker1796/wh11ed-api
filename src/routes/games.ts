@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { requireAuth, type AuthVars } from '../auth/middleware.js'
-import { parseGame, extractMetadata, GamePayloadError } from '../domain/game.js'
+import { parseGame, extractMetadata, GamePayloadError, gameIdSchema } from '../domain/game.js'
 import { config } from '../config.js'
 import {
   listGames,
@@ -27,13 +27,17 @@ gameRoutes.get('/', async (c) => {
 })
 
 gameRoutes.get('/:id', async (c) => {
-  const blob = await getGameBlob(c.var.userId, c.req.param('id'))
+  const idParsed = gameIdSchema.safeParse(c.req.param('id'))
+  if (!idParsed.success) return c.json({ error: 'bad_id' }, 400)
+  const blob = await getGameBlob(c.var.userId, idParsed.data)
   if (!blob) return c.json({ error: 'not_found' }, 404)
   return c.json(blob)
 })
 
 gameRoutes.put('/:id', async (c) => {
-  const id = c.req.param('id')
+  const idParsed = gameIdSchema.safeParse(c.req.param('id'))
+  if (!idParsed.success) return c.json({ error: 'bad_id' }, 400)
+  const id = idParsed.data
   let raw: unknown
   try {
     raw = await c.req.json()
@@ -67,6 +71,8 @@ gameRoutes.put('/:id', async (c) => {
 })
 
 gameRoutes.delete('/:id', async (c) => {
-  await deleteGame(c.var.userId, c.req.param('id'))
+  const idParsed = gameIdSchema.safeParse(c.req.param('id'))
+  if (!idParsed.success) return c.json({ error: 'bad_id' }, 400)
+  await deleteGame(c.var.userId, idParsed.data)
   return c.body(null, 204)
 })

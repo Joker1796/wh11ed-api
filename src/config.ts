@@ -33,7 +33,17 @@ export interface OAuthProviderConfig {
 // preserving fail-fast at the server/handler entrypoints). Constants are plain fields.
 export const config = {
   get allowedOrigins(): string[] {
-    return opt('ALLOWED_ORIGINS', 'http://localhost:5173')
+    const raw = process.env.ALLOWED_ORIGINS
+    if (!raw) {
+      // No explicit allow-list. A localhost default is fine for local http dev, but in
+      // production (https API) we refuse to fall back — an unset ALLOWED_ORIGINS there is
+      // a misconfiguration that would otherwise silently weaken CSRF defence.
+      if (this.apiBaseUrl.startsWith('https')) {
+        throw new Error('Missing required env var: ALLOWED_ORIGINS')
+      }
+      return ['http://localhost:5173']
+    }
+    return raw
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
