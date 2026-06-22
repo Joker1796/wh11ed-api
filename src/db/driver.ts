@@ -1,4 +1,5 @@
 import { Driver, TokenAuthService, Ydb, type IAuthService } from 'ydb-sdk'
+import { toSnakeCaseKeys } from './rows.js'
 import { config } from '../config.js'
 import { MetadataTokenAuthService } from './metadata-auth.js'
 
@@ -47,7 +48,7 @@ export async function query<T = Record<string, unknown>>(
       const { resultSets } = await session.execute({ text, parameters })
       const out: T[] = []
       for await (const rs of resultSets) {
-        for await (const row of rs.rows) out.push(row as T)
+        for await (const row of rs.rows) out.push(toSnakeCaseKeys(row) as T)
       }
       return out
     },
