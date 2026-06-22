@@ -2,7 +2,10 @@ terraform {
   required_version = ">= 1.6"
   required_providers {
     yandex = {
-      source  = "yandex-cloud/yandex"
+      # Fully-qualified host so OpenTofu (default registry registry.opentofu.org) resolves the
+      # same FQN as Terraform and can be routed to Yandex's provider mirror (HashiCorp's registry
+      # is geo-blocked from RU). For stock Terraform this host is already the default — no change.
+      source  = "registry.terraform.io/yandex-cloud/yandex"
       version = ">= 0.130"
     }
   }

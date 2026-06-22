@@ -7,4 +7,6 @@ dist/
 *.tfstate.*
 .terraform/
 .terraform.lock.hcl
+*.tfvars
+*.auto.tfvars
 *.log

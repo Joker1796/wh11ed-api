@@ -1,7 +1,7 @@
 # wh11ed-api
 
 Backend microservice for **cloud backup of the wh11ed Game Tracker history**. Users log in with
-Google or Yandex (OAuth, no passwords) and back up / list / view / restore / delete their
+Yandex (OAuth, no passwords) and back up / list / view / restore / delete their
 finished games. `localStorage` stays the primary store; the cloud is a backup.
 
 - **Runtime:** Yandex Cloud Functions (`nodejs22`) behind Yandex API Gateway
@@ -35,7 +35,7 @@ Request/Response. Porting to another runtime later = a new adapter; `src/` is un
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/health` | – | liveness |
-| GET | `/auth/{provider}/login` | – | start OAuth (`provider` = `google`\|`yandex`) |
+| GET | `/auth/{provider}/login` | – | start OAuth (`provider` = `yandex`) |
 | GET | `/auth/{provider}/callback` | – | OAuth redirect target |
 | POST | `/auth/refresh` | refresh cookie | `{ accessToken, expiresIn }`, rotates cookie |
 | POST | `/auth/logout` | refresh cookie | revoke session |
@@ -56,13 +56,13 @@ npm test                      # adapter + domain unit tests
 npm run typecheck
 ```
 
-OAuth locally needs app registrations with redirect URIs
-`http://localhost:8787/auth/google/callback` and `.../yandex/callback`.
+OAuth locally needs an app registration with redirect URI
+`http://localhost:8787/auth/yandex/callback`.
 
 ## Deploy
 
 ```bash
-# infra/secret.auto.tfvars (gitignored): jwt_signing_key, google_*, yandex_* + api_base_url etc.
+# infra/secret.auto.tfvars (gitignored): jwt_signing_key, yandex_* + api_base_url etc.
 bash scripts/deploy.sh
 ```
 
@@ -70,8 +70,8 @@ Then, **first time only**:
 1. Create the DNS records from the Terraform outputs: `CNAME api → <gateway_default_domain>` and
    the certificate-validation `CNAME`. Wait for the managed cert to reach **Issued**.
 2. `npm run migrate` against the new YDB (set `YDB_ENDPOINT`/`YDB_DATABASE` from outputs).
-3. Register the production redirect URIs (`https://api.wh11ed.ru/auth/{google,yandex}/callback`)
-   in the Google Cloud Console and the Yandex OAuth cabinet.
+3. Register the production redirect URI (`https://api.wh11ed.ru/auth/yandex/callback`)
+   in the Yandex OAuth cabinet.
 
 ## Security notes
 - TLS only; CORS locked to `ALLOWED_ORIGINS` with credentials (no wildcard).

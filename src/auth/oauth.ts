@@ -38,11 +38,6 @@ export function buildAuthUrl(provider: ProviderName, pkce: PkceState): string {
     code_challenge: challenge,
     code_challenge_method: 'S256',
   })
-  if (provider === 'google') {
-    // Request a refresh-less, consent-light login; we only need identity.
-    params.set('access_type', 'online')
-    params.set('prompt', 'select_account')
-  }
   return `${p.authUrl}?${params.toString()}`
 }
 
@@ -78,30 +73,19 @@ export async function fetchIdentity(
   accessToken: string,
 ): Promise<OAuthIdentity> {
   const p = oauthProvider(provider)
-  // Yandex expects the "OAuth" auth scheme; Google (OIDC) expects "Bearer".
-  const scheme = provider === 'yandex' ? 'OAuth' : 'Bearer'
+  // Yandex expects the "OAuth" auth scheme (not "Bearer").
   const res = await fetch(p.userInfoUrl, {
-    headers: { Authorization: `${scheme} ${accessToken}`, Accept: 'application/json' },
+    headers: { Authorization: `OAuth ${accessToken}`, Accept: 'application/json' },
   })
   if (!res.ok) throw new OAuthError(`Userinfo failed (${provider}): ${res.status}`)
   const data = (await res.json()) as Record<string, unknown>
 
-  if (provider === 'yandex') {
-    const sub = String(data['id'] ?? '')
-    if (!sub) throw new OAuthError('Yandex userinfo missing id')
-    return {
-      sub,
-      email: (data['default_email'] as string) || null,
-      displayName: (data['display_name'] as string) || (data['real_name'] as string) || null,
-    }
-  }
-  // Google / OIDC
-  const sub = String(data['sub'] ?? '')
-  if (!sub) throw new OAuthError('Google userinfo missing sub')
+  const sub = String(data['id'] ?? '')
+  if (!sub) throw new OAuthError('Yandex userinfo missing id')
   return {
     sub,
-    email: (data['email'] as string) || null,
-    displayName: (data['name'] as string) || null,
+    email: (data['default_email'] as string) || null,
+    displayName: (data['display_name'] as string) || (data['real_name'] as string) || null,
   }
 }
 

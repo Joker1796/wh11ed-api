@@ -60,7 +60,10 @@ export const config = {
 
   ydb: {
     get endpoint(): string {
-      return req('YDB_ENDPOINT')
+      // ydb-sdk's Driver needs a scheme; Yandex's `ydb_api_endpoint` (injected by Terraform) comes
+      // as a bare "host:port", so default to grpcs:// when no scheme is present.
+      const e = req('YDB_ENDPOINT')
+      return /^grpcs?:\/\//.test(e) ? e : `grpcs://${e}`
     },
     get database(): string {
       return req('YDB_DATABASE')
@@ -75,19 +78,12 @@ export const config = {
   maxGamesPerUser: 500,
 } as const
 
-export type ProviderName = 'google' | 'yandex'
+// Only Yandex is supported. The provider abstraction is kept (rather than hardcoded) so another
+// provider can be re-added here + in `ProviderName`/`isProviderName` without touching routes.
+export type ProviderName = 'yandex'
 
 export function oauthProvider(name: ProviderName): OAuthProviderConfig {
   switch (name) {
-    case 'google':
-      return {
-        clientId: req('GOOGLE_CLIENT_ID'),
-        clientSecret: req('GOOGLE_CLIENT_SECRET'),
-        authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-        tokenUrl: 'https://oauth2.googleapis.com/token',
-        userInfoUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
-        scope: 'openid email profile',
-      }
     case 'yandex':
       return {
         clientId: req('YANDEX_CLIENT_ID'),
@@ -101,7 +97,7 @@ export function oauthProvider(name: ProviderName): OAuthProviderConfig {
 }
 
 export function isProviderName(v: string): v is ProviderName {
-  return v === 'google' || v === 'yandex'
+  return v === 'yandex'
 }
 
 export function redirectUri(name: ProviderName): string {
