@@ -6,6 +6,9 @@ Backend microservice for cloud backup of the wh11ed Game Tracker history (the SP
 `README.md` has the full HTTP contract, auth flow, deploy runbook, and security notes — read it for
 the API surface. This file covers the things you only learn by reading several files.
 
+> Родительская папка `../` содержит фронтенд `../wh11ed` и общий обзор —
+> см. [`../CLAUDE.md`](../CLAUDE.md) (маршрутизация фронт/бэк и стиль работы).
+
 ## Commands
 
 ```bash
