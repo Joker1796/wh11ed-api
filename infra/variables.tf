@@ -16,7 +16,7 @@ variable "api_base_url" {
 }
 variable "app_after_login_url" {
   type        = string
-  description = "SPA route to return to after login, e.g. https://wh11ed.ru/#/tracker/auth-callback"
+  description = "SPA route to return to after login, e.g. https://wh11ed.ru/tracker/auth-callback"
 }
 variable "cookie_domain" {
   type        = string
