@@ -36,10 +36,6 @@ by reading several files at once: layering, the singleton driver, the auth invar
 Node ≥22 required. `npm install && npm test` needs no cloud credentials — the tests are unit tests
 over the adapter and domain layers.
 
-> Если рядом склонирована родительская папка, в [`../CLAUDE.md`](../CLAUDE.md) лежит маршрутизация
-> фронт/бэк и стиль работы, а фронтенд — в `../wh11ed`. При отдельном клоне этого репозитория их
-> нет; всё нужное для работы над сервисом есть здесь и в README.
-
 ## Commands
 
 ```bash
