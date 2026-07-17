@@ -2,12 +2,43 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Backend microservice for cloud backup of the wh11ed Game Tracker history (the SPA in `../wh11ed`).
-`README.md` has the full HTTP contract, auth flow, deploy runbook, and security notes — read it for
-the API surface. This file covers the things you only learn by reading several files.
+## What this is
 
-> Родительская папка `../` содержит фронтенд `../wh11ed` и общий обзор —
-> см. [`../CLAUDE.md`](../CLAUDE.md) (маршрутизация фронт/бэк и стиль работы).
+The backend for **wh11ed** — a bilingual EN/RU Warhammer 40,000 11th ed rules reference and offline
+game tracker ([wh11ed.ru](https://wh11ed.ru), frontend in
+[Joker1796/wh11ed](https://github.com/Joker1796/wh11ed)).
+
+Its whole job is **cloud backup of finished games**: let a player sign in and keep their tracker
+history across devices. That's all. The app deliberately works without it — rules, tracker and PWA
+are entirely client-side — so this service is **optional infrastructure, not the product**. If it's
+down, nobody loses a game; they lose sync.
+
+That framing explains the shape of the code:
+
+- **It's small on purpose.** Three tables, a handful of routes. The complexity in this product lives
+  in the frontend; resist moving logic here.
+- **The game payload is an opaque blob.** `domain/game.ts` validates only the envelope the API
+  actually needs and uses `.passthrough()` everywhere — the client owns the game's internal shape and
+  evolves it freely. **This is the one real coupling between the two repos**: change the saved-game
+  format or the auth flow on the frontend and you must check it here, and vice versa.
+- **Serverless shapes the design.** It runs as a Yandex Cloud Function, so warm invocations reuse
+  state: the YDB driver is a module-scope singleton, never per-request. The core is
+  runtime-agnostic (`app.fetch(Request)`), with Yandex confined to `adapters/`.
+- **Some things are deliberate and must not be "fixed"** — `SameSite=None` on the session cookie
+  (an earlier `Strict` broke the deployed login), `@yandex-cloud/nodejs-sdk` marked external in the
+  bundle, `dist/package.json` forcing CommonJS. Each is explained below where it appears; check
+  before changing.
+
+**Where to start:** [`README.md`](README.md) has the full HTTP contract, auth flow, deploy runbook
+and security notes — read it for the API surface. This file covers what you'd otherwise only learn
+by reading several files at once: layering, the singleton driver, the auth invariants, build gotchas.
+
+Node ≥22 required. `npm install && npm test` needs no cloud credentials — the tests are unit tests
+over the adapter and domain layers.
+
+> Если рядом склонирована родительская папка, в [`../CLAUDE.md`](../CLAUDE.md) лежит маршрутизация
+> фронт/бэк и стиль работы, а фронтенд — в `../wh11ed`. При отдельном клоне этого репозитория их
+> нет; всё нужное для работы над сервисом есть здесь и в README.
 
 ## Commands
 
