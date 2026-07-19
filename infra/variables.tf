@@ -7,8 +7,9 @@ variable "zone" {
 
 # Public config (non-secret) passed to the function as plain env vars.
 variable "allowed_origins" {
-  type    = string
-  default = "https://wh11ed.ru"
+  type = string
+  # Both during the wh11ed.ru → wh-rules.ru transition; drop the old one once fully cut over.
+  default = "https://wh11ed.ru,https://wh-rules.ru"
 }
 variable "api_base_url" {
   type        = string
@@ -20,12 +21,12 @@ variable "app_after_login_url" {
 }
 variable "cookie_domain" {
   type        = string
-  default     = "api.wh11ed.ru"
+  default     = "api.wh-rules.ru"
   description = "Domain attribute for the refresh cookie."
 }
 variable "custom_domain" {
   type        = string
-  default     = "api.wh11ed.ru"
+  default     = "api.wh-rules.ru"
   description = "Custom domain to attach to the API Gateway."
 }
 variable "attach_custom_domain" {
