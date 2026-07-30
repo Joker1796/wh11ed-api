@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push to the same branch supersedes the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches package.json's engines.node (>=22); the YC Functions runtime is Node 22.
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Each step runs even if an earlier one failed, so one push reports everything at once.
+      - name: Typecheck
+        if: ${{ !cancelled() }}
+        run: npm run typecheck
+
+      - name: Tests
+        if: ${{ !cancelled() }}
+        run: npm test
+
+      # `npm run build` = tsc --noEmit + scripts/bundle.mjs (esbuild → dist/handler.js). Pure
+      # bundling: it needs no YDB/OAuth credentials and touches no cloud resource, so it is safe
+      # to run on a PR. It only proves the function still bundles — deploying stays manual.
+      - name: Bundle
+        if: ${{ !cancelled() }}
+        run: npm run build
