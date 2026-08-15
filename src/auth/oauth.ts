@@ -1,5 +1,5 @@
 import { randomBytes, createHash } from 'node:crypto'
-import { oauthProvider, redirectUri, type ProviderName } from '../config.js'
+import { oauthProvider, redirectUri, type ProviderName, type Site } from '../config.js'
 
 // OAuth 2.0 Authorization Code flow with PKCE. The code→token exchange happens here
 // (server-side), so the client secret never reaches the browser.
@@ -26,13 +26,15 @@ export function createPkceState(): PkceState {
   }
 }
 
-export function buildAuthUrl(provider: ProviderName, pkce: PkceState): string {
+// `site` picks which api host's /callback Yandex sends the user back to (host-aware, see
+// config.ts siteForHost) — it must be one of the Redirect URIs registered for the OAuth app.
+export function buildAuthUrl(provider: ProviderName, pkce: PkceState, site?: Site): string {
   const p = oauthProvider(provider)
   const challenge = b64url(createHash('sha256').update(pkce.codeVerifier).digest())
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: p.clientId,
-    redirect_uri: redirectUri(provider),
+    redirect_uri: redirectUri(provider, site),
     scope: p.scope,
     state: pkce.state,
     code_challenge: challenge,
@@ -41,16 +43,20 @@ export function buildAuthUrl(provider: ProviderName, pkce: PkceState): string {
   return `${p.authUrl}?${params.toString()}`
 }
 
+// `site` must resolve to the same host the authorize step used — the token exchange's
+// redirect_uri has to match the authorize-time value. Both derive from the request Host, and
+// the callback always arrives on the host named in redirect_uri, so they agree by construction.
 export async function exchangeCode(
   provider: ProviderName,
   code: string,
   codeVerifier: string,
+  site?: Site,
 ): Promise<string> {
   const p = oauthProvider(provider)
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
-    redirect_uri: redirectUri(provider),
+    redirect_uri: redirectUri(provider, site),
     client_id: p.clientId,
     client_secret: p.clientSecret,
     code_verifier: codeVerifier,

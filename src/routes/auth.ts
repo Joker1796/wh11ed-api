@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { getSignedCookie, setSignedCookie, setCookie, getCookie, deleteCookie } from 'hono/cookie'
-import { config, isProviderName, type ProviderName } from '../config.js'
+import { config, isProviderName, siteForHost, type ProviderName, type Site } from '../config.js'
 import {
   buildAuthUrl,
   createPkceState,
@@ -29,11 +29,19 @@ function originAllowed(origin: string | undefined): boolean {
   return config.allowedOrigins.includes(origin)
 }
 
+// Host-aware site for this request (see config.ts siteForHost): cookies, the post-login
+// redirect and the OAuth redirect_uri are all built for the domain the request came in on,
+// so login works on both the old and the new domain during the migration.
+function siteOf(c: { req: { header(name: string): string | undefined } }): Site {
+  return siteForHost(c.req.header('Host'))
+}
+
 authRoutes.get('/:provider/login', async (c) => {
   const provider = c.req.param('provider')
   if (!isProviderName(provider)) return c.json({ error: 'unknown_provider' }, 404)
 
   const pkce = createPkceState()
+  const site = siteOf(c)
   await setSignedCookie(
     c,
     STATE_COOKIE,
@@ -41,15 +49,16 @@ authRoutes.get('/:provider/login', async (c) => {
     config.jwtSigningKey,
     { httpOnly: true, secure: isSecure(), sameSite: 'Lax', path: '/auth', maxAge: 600 },
   )
-  return c.redirect(buildAuthUrl(provider, pkce))
+  return c.redirect(buildAuthUrl(provider, pkce, site))
 })
 
 authRoutes.get('/:provider/callback', async (c) => {
   const provider = c.req.param('provider')
   if (!isProviderName(provider)) return c.json({ error: 'unknown_provider' }, 404)
 
+  const site = siteOf(c)
   const err = c.req.query('error')
-  if (err) return c.redirect(`${config.appAfterLoginUrl}?error=${encodeURIComponent(err)}`)
+  if (err) return c.redirect(`${site.appAfterLoginUrl}?error=${encodeURIComponent(err)}`)
 
   const code = c.req.query('code')
   const state = c.req.query('state')
@@ -70,7 +79,7 @@ authRoutes.get('/:provider/callback', async (c) => {
   }
 
   try {
-    const providerToken = await exchangeCode(provider, code, saved.codeVerifier)
+    const providerToken = await exchangeCode(provider, code, saved.codeVerifier, site)
     const identity = await fetchIdentity(provider, providerToken)
     const userId = `${provider}:${identity.sub}`
     await upsertUser({
@@ -89,10 +98,10 @@ authRoutes.get('/:provider/callback', async (c) => {
       // None+insecure would be rejected by the browser.
       sameSite: isSecure() ? 'None' : 'Lax',
       path: '/auth',
-      domain: config.cookieDomain || undefined,
+      domain: site.cookieDomain || undefined,
       maxAge: config.refreshTokenTtl,
     })
-    return c.redirect(config.appAfterLoginUrl)
+    return c.redirect(site.appAfterLoginUrl)
   } catch (e) {
     if (e instanceof OAuthError) return c.json({ error: 'oauth_failed' }, 502)
     throw e
@@ -104,9 +113,10 @@ authRoutes.post('/refresh', async (c) => {
   const cookieValue = getCookie(c, REFRESH_COOKIE)
   if (!cookieValue) return c.json({ error: 'no_session' }, 401)
 
+  const site = siteOf(c)
   const rotated = await rotateSession(cookieValue)
   if (!rotated) {
-    deleteCookie(c, REFRESH_COOKIE, { path: '/auth', domain: config.cookieDomain || undefined })
+    deleteCookie(c, REFRESH_COOKIE, { path: '/auth', domain: site.cookieDomain || undefined })
     return c.json({ error: 'invalid_session' }, 401)
   }
   setCookie(c, REFRESH_COOKIE, rotated.newCookie, {
@@ -117,7 +127,7 @@ authRoutes.post('/refresh', async (c) => {
     // works as deployed — don't "normalize" the two without re-testing the real refresh flow.
     sameSite: 'Strict',
     path: '/auth',
-    domain: config.cookieDomain || undefined,
+    domain: site.cookieDomain || undefined,
     maxAge: config.refreshTokenTtl,
   })
   const { token, expiresIn } = await issueAccessToken(rotated.userId)
@@ -128,6 +138,6 @@ authRoutes.post('/logout', async (c) => {
   if (!originAllowed(c.req.header('Origin'))) return c.json({ error: 'forbidden_origin' }, 403)
   const cookieValue = getCookie(c, REFRESH_COOKIE)
   if (cookieValue) await destroySessionByCookie(cookieValue)
-  deleteCookie(c, REFRESH_COOKIE, { path: '/auth', domain: config.cookieDomain || undefined })
+  deleteCookie(c, REFRESH_COOKIE, { path: '/auth', domain: siteOf(c).cookieDomain || undefined })
   return c.body(null, 204)
 })

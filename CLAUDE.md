@@ -90,7 +90,11 @@ sessions. Migrations are a list of idempotent `CREATE TABLE IF NOT EXISTS` / `AL
 shape and may evolve it, so unknown fields are preserved. `extractMetadata` denormalizes the small
 fields used by the history list view into dedicated columns.
 
-**Auth.** Authorization Code + PKCE; the client secret never leaves the server. Sessions
+**Auth.** Authorization Code + PKCE; the client secret never leaves the server. **Host-aware
+domains:** the auth routes derive cookie domain / post-login redirect / OAuth `redirect_uri` from
+the request `Host` via `siteForHost()` (`src/config.ts`) so one function serves both
+`api.wh11ed.ru` and `api.wh-rules.ru` during the domain migration; unknown Hosts fall back to the
+env defaults — don't rebuild redirects from raw headers anywhere else. Sessions
 (`src/auth/sessions.ts`): refresh tokens are opaque random strings stored only as SHA-256 hashes,
 **single-use** (rotated on every `/auth/refresh`), with reuse-detection that destroys the session.
 The cookie value is `sessionId.secret` so refresh is an O(1) PK lookup. Access tokens are

@@ -110,8 +110,49 @@ export function isProviderName(v: string): v is ProviderName {
   return v === 'yandex'
 }
 
-export function redirectUri(name: ProviderName): string {
-  return `${config.apiBaseUrl}/auth/${name}/callback`
+// ─── Host-aware site resolution (domain migration; see wh11ed/MIGRATION.md) ─────────────────
+// One function serves both api.wh11ed.ru and api.wh-rules.ru: the API gateway passes the
+// user-facing Host header through to the function ("the Host header specifies the host used
+// by the user to access the API gateway" — docs/functions/concepts/function-invoke), so the
+// auth routes derive cookies/redirects/OAuth callback per request instead of from the single
+// env-configured domain.
+//
+// Only Hosts matching the `api.<origin-host>` convention of an https ALLOWED_ORIGINS entry
+// are recognised; anything else (localhost dev, direct invocation, unexpected domains) falls
+// back to the env default. Never build redirects/cookies from an arbitrary Host — that would
+// be an open redirect.
+export interface Site {
+  apiBaseUrl: string
+  appAfterLoginUrl: string
+  cookieDomain: string
+}
+
+export function siteForHost(host: string | undefined): Site {
+  const fallback: Site = {
+    apiBaseUrl: config.apiBaseUrl,
+    appAfterLoginUrl: config.appAfterLoginUrl,
+    cookieDomain: config.cookieDomain,
+  }
+  if (!host) return fallback
+  const h = host.trim().toLowerCase().replace(/:\d+$/, '')
+  for (const origin of config.allowedOrigins) {
+    if (!origin.startsWith('https://')) continue
+    const appHost = new URL(origin).hostname
+    if (h !== `api.${appHost}`) continue
+    const after = new URL(config.appAfterLoginUrl)
+    return {
+      apiBaseUrl: `https://${h}`,
+      appAfterLoginUrl: `${origin}${after.pathname}${after.search}`,
+      // Mirror the default's shape: if COOKIE_DOMAIN is unset (host-only cookies), stay
+      // host-only for derived sites too; otherwise scope to the requested api host.
+      cookieDomain: config.cookieDomain ? h : '',
+    }
+  }
+  return fallback
+}
+
+export function redirectUri(name: ProviderName, site?: Site): string {
+  return `${(site?.apiBaseUrl ?? config.apiBaseUrl)}/auth/${name}/callback`
 }
 
 // CORS origin policy (used by app.ts). A disallowed Origin gets the canonical origin back

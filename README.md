@@ -31,6 +31,13 @@ Request/Response. Porting to another runtime later = a new adapter; `src/` is un
 3. SPA → `POST /auth/refresh` (`credentials:'include'`) — rotates the refresh token, returns a
    short-lived **access** JWT kept in memory and sent as `Authorization: Bearer` on API calls.
 
+**Host-aware domains (migration):** one function serves both `api.wh11ed.ru` and
+`api.wh-rules.ru`. The auth routes derive the cookie domain, post-login redirect and OAuth
+`redirect_uri` from the request's `Host` header (`siteForHost` in `src/config.ts` — only Hosts
+matching `api.<host>` of an https `ALLOWED_ORIGINS` entry are recognised; anything else falls
+back to the `API_BASE_URL`/`APP_AFTER_LOGIN_URL`/`COOKIE_DOMAIN` env defaults). Both callback
+URLs must stay registered as Redirect URIs of the Yandex OAuth app.
+
 ## API
 
 | Method | Path | Auth | Purpose |
