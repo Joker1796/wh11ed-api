@@ -113,3 +113,16 @@ export function isProviderName(v: string): v is ProviderName {
 export function redirectUri(name: ProviderName): string {
   return `${config.apiBaseUrl}/auth/${name}/callback`
 }
+
+// CORS origin policy (used by app.ts). A disallowed Origin gets the canonical origin back
+// instead of no header: when the app omits Access-Control-Allow-Origin, the YC
+// gateway/function platform layer fills in `*` (+ allow-credentials: true), re-opening what
+// the allow-list closed. An explicit mismatching value keeps browsers blocking and leaves
+// nothing for the platform to add. Lives here (not app.ts) so tests can import it without
+// dragging in ydb-sdk via the route graph.
+export function corsOrigin(origin: string): string {
+  const allowed = config.allowedOrigins
+  // allowedOrigins is never empty (the getter throws or falls back to localhost), so the
+  // `?? origin` arm exists only to satisfy noUncheckedIndexedAccess.
+  return allowed.includes(origin) ? origin : (allowed[0] ?? origin)
+}

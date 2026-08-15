@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { config } from './config.js'
+import { corsOrigin } from './config.js'
 import { authRoutes } from './routes/auth.js'
 import { gameRoutes } from './routes/games.js'
 import { meRoutes } from './routes/me.js'
@@ -12,7 +12,7 @@ export const app = new Hono()
 app.use(
   '*',
   cors({
-    origin: (origin) => (config.allowedOrigins.includes(origin) ? origin : null),
+    origin: corsOrigin,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Authorization', 'Content-Type'],
     credentials: true,
