@@ -8,14 +8,14 @@ The backend for **wh11ed** — a bilingual EN/RU Warhammer 40,000 11th ed rules 
 game tracker ([wh11ed.ru](https://wh11ed.ru), frontend in
 [Joker1796/wh11ed](https://github.com/Joker1796/wh11ed)).
 
-Its whole job is **cloud backup of finished games**: let a player sign in and keep their tracker
-history across devices. That's all. The app deliberately works without it — rules, tracker and PWA
+Its whole job is **cloud backup of finished games and army lists**: let a player sign in and keep
+their tracker history and rosters across devices. That's all. The app deliberately works without it — rules, tracker and PWA
 are entirely client-side — so this service is **optional infrastructure, not the product**. If it's
 down, nobody loses a game; they lose sync.
 
 That framing explains the shape of the code:
 
-- **It's small on purpose.** Three tables, a handful of routes. The complexity in this product lives
+- **It's small on purpose.** Four tables, a handful of routes. The complexity in this product lives
   in the frontend; resist moving logic here.
 - **The game payload is an opaque blob.** `domain/game.ts` validates only the envelope the API
   actually needs and uses `.passthrough()` everywhere — the client owns the game's internal shape and
@@ -79,8 +79,8 @@ chosen at runtime: `YDB_ACCESS_TOKEN` (local dev) → `TokenAuthService`; empty 
 All queries go through `query<T>(yql, params)` — parameterized YQL only (param keys keep the
 leading `$`, values are `ydb-sdk` `TypedValues`); never string-interpolate user input.
 
-**Schema (`src/db/schema.ts`):** three tables — `users`, `games` (PK `(user_id, game_id)`),
-`sessions`. JSON blobs and ISO timestamps are stored as `Utf8` (never queried server-side); only
+**Schema (`src/db/schema.ts`):** four tables — `users`, `games` (PK `(user_id, game_id)`),
+`rosters` (PK `(user_id, roster_id)`), `sessions`. JSON blobs and ISO timestamps are stored as `Utf8` (never queried server-side); only
 `sessions.expires_at` is a real `Timestamp` because a YDB **TTL** column auto-purges expired
 sessions. Migrations are a list of idempotent `CREATE TABLE IF NOT EXISTS` / `ALTER` statements.
 
@@ -89,6 +89,14 @@ sessions. Migrations are a list of idempotent `CREATE TABLE IF NOT EXISTS` / `AL
 `finishedAt`, `result.totals`) and uses `.passthrough()` everywhere — the client owns the internal
 shape and may evolve it, so unknown fields are preserved. `extractMetadata` denormalizes the small
 fields used by the history list view into dedicated columns.
+
+**Roster payload (`src/domain/roster.ts`):** the same opaque-blob treatment as a game, with three
+differences worth knowing. Its client timestamps are **epoch milliseconds**, not ISO strings, and
+`updatedAt` is mirrored into its own column because the client's last-write-wins merge compares on
+it. `GET /rosters` returns **metadata only** — that one request is the whole cost of opening the
+app's roster screen, and blobs are fetched only for the lists whose `updatedAt` moved. And a wizard
+draft (`draft: true`) is rejected with 422: an unfinished list never leaves the device it was
+started on, so `rosterSchema` accepts only `draft: false`/absent.
 
 **Auth.** Authorization Code + PKCE; the client secret never leaves the server. **Host-aware
 domains:** the auth routes derive cookie domain / post-login redirect / OAuth `redirect_uri` from

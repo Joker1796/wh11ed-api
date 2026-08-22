@@ -1,8 +1,8 @@
 # wh11ed-api
 
-Backend microservice for **cloud backup of the wh11ed Game Tracker history**. Users log in with
-Yandex (OAuth, no passwords) and back up / list / view / restore / delete their
-finished games. `localStorage` stays the primary store; the cloud is a backup.
+Backend microservice for **cloud backup of the wh11ed Game Tracker history and army lists**.
+Users log in with Yandex (OAuth, no passwords) and back up / list / view / restore / delete their
+finished games and rosters. `localStorage` stays the primary store; the cloud is a backup.
 
 - **Runtime:** Yandex Cloud Functions (`nodejs22`) behind Yandex API Gateway
 - **DB:** YDB serverless (scales to zero — effectively free at this scale)
@@ -52,6 +52,15 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | GET | `/games/{id}` | Bearer | full game blob |
 | PUT | `/games/{id}` | Bearer | idempotent upsert (body = game JSON; `id` must match path) |
 | DELETE | `/games/{id}` | Bearer | delete |
+| GET | `/rosters?limit=` | Bearer | list metadata **only** `{ rosterId, name, faction, updatedAt, points, unitCount }` |
+| GET | `/rosters/{id}` | Bearer | full roster blob |
+| PUT | `/rosters/{id}` | Bearer | idempotent upsert (body = roster JSON; `id` must match path; a wizard draft is rejected 422) |
+| DELETE | `/rosters/{id}` | Bearer | delete |
+
+`/rosters` mirrors `/games` with one deliberate difference: the list endpoint returns metadata
+without blobs, so entering the app's roster screen costs one small request and only the lists
+whose `updatedAt` actually moved are downloaded. `updatedAt` is the client's epoch-ms timestamp
+and is what its last-write-wins merge compares on. Caps: 32 KB per roster, 200 rosters per user.
 
 ## Local development
 

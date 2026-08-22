@@ -86,6 +86,10 @@ export const config = {
   // Per-game payload cap and per-user game cap (defence-in-depth limits).
   maxGameBytes: 64 * 1024,
   maxGamesPerUser: 500,
+  // Same for army lists. A big list measures well under 12 KB, so 32 KB is roomy; the per-user
+  // cap is lower than games' because a collection of lists is curated, not accumulated.
+  maxRosterBytes: 32 * 1024,
+  maxRostersPerUser: 200,
 } as const
 
 // Only Yandex is supported. The provider abstraction is kept (rather than hardcoded) so another

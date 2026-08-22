@@ -28,6 +28,22 @@ const STATEMENTS: string[] = [
      PRIMARY KEY (user_id, game_id)
    );`,
 
+  // Army lists. Same blob-plus-envelope shape as `games`; `updated_at` is the CLIENT's epoch-ms
+  // timestamp (kept as Utf8 like every other value here) because last-write-wins compares on it,
+  // while `server_updated_at` is only for diagnostics.
+  `CREATE TABLE IF NOT EXISTS rosters (
+     user_id Utf8 NOT NULL,
+     roster_id Utf8 NOT NULL,
+     blob Utf8,
+     name Utf8,
+     faction Utf8,
+     updated_at Utf8,
+     points Utf8,
+     unit_count Utf8,
+     server_updated_at Utf8,
+     PRIMARY KEY (user_id, roster_id)
+   );`,
+
   `CREATE TABLE IF NOT EXISTS sessions (
      session_id Utf8 NOT NULL,
      user_id Utf8,
