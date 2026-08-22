@@ -49,6 +49,18 @@ export interface RosterMetadata {
   unitCount: number
 }
 
+// A deleted list keeps nothing but its id and the moment it died — enough for another device to
+// drop its own copy, and nothing that would keep a deleted army list readable on the server.
+// `deletedAt` is the deleting client's clock (the same scale as `updatedAt`), so a list saved
+// after the delete outranks the tombstone and comes back.
+export interface RosterTombstone {
+  rosterId: string
+  deleted: true
+  deletedAt: number
+}
+
+export type RosterListEntry = RosterMetadata | RosterTombstone
+
 export function extractMetadata(roster: Roster): RosterMetadata {
   return {
     rosterId: roster.id,

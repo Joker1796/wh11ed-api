@@ -90,13 +90,18 @@ sessions. Migrations are a list of idempotent `CREATE TABLE IF NOT EXISTS` / `AL
 shape and may evolve it, so unknown fields are preserved. `extractMetadata` denormalizes the small
 fields used by the history list view into dedicated columns.
 
-**Roster payload (`src/domain/roster.ts`):** the same opaque-blob treatment as a game, with three
+**Roster payload (`src/domain/roster.ts`):** the same opaque-blob treatment as a game, with four
 differences worth knowing. Its client timestamps are **epoch milliseconds**, not ISO strings, and
 `updatedAt` is mirrored into its own column because the client's last-write-wins merge compares on
 it. `GET /rosters` returns **metadata only** — that one request is the whole cost of opening the
 app's roster screen, and blobs are fetched only for the lists whose `updatedAt` moved. And a wizard
 draft (`draft: true`) is rejected with 422: an unfinished list never leaves the device it was
-started on, so `rosterSchema` accepts only `draft: false`/absent.
+started on, so `rosterSchema` accepts only `draft: false`/absent. Finally, **DELETE tombstones**
+(`deleted_at`) rather than removing the row, and the list endpoint reports tombstones alongside
+live lists — a second device has no other way to learn a list was deleted elsewhere, and would
+otherwise re-upload its copy. `tombstoneRoster` is an `UPDATE`, not an `UPSERT`, so deleting an id
+the cloud never held can't conjure a row; `purgeOldTombstones` sweeps anything older than 180 days
+on the next delete, which is why the table needs no TTL column.
 
 **Auth.** Authorization Code + PKCE; the client secret never leaves the server. **Host-aware
 domains:** the auth routes derive cookie domain / post-login redirect / OAuth `redirect_uri` from

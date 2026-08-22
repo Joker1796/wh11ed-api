@@ -31,6 +31,13 @@ const STATEMENTS: string[] = [
   // Army lists. Same blob-plus-envelope shape as `games`; `updated_at` is the CLIENT's epoch-ms
   // timestamp (kept as Utf8 like every other value here) because last-write-wins compares on it,
   // while `server_updated_at` is only for diagnostics.
+  //
+  // `deleted_at` makes a delete a TOMBSTONE rather than a disappearance: the row stays, emptied,
+  // and the list endpoint reports it so a second device learns the list is gone instead of
+  // re-uploading its own copy. Empty string = live. It is the client's epoch-ms clock too, so it
+  // is directly comparable with a roster's `updated_at` — that comparison is what lets a list
+  // saved AFTER the delete win and come back. Old tombstones are swept on the next delete
+  // (rosters.repo.ts), so no TTL column is needed.
   `CREATE TABLE IF NOT EXISTS rosters (
      user_id Utf8 NOT NULL,
      roster_id Utf8 NOT NULL,
@@ -40,6 +47,7 @@ const STATEMENTS: string[] = [
      updated_at Utf8,
      points Utf8,
      unit_count Utf8,
+     deleted_at Utf8,
      server_updated_at Utf8,
      PRIMARY KEY (user_id, roster_id)
    );`,

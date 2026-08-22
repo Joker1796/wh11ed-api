@@ -52,15 +52,19 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | GET | `/games/{id}` | Bearer | full game blob |
 | PUT | `/games/{id}` | Bearer | idempotent upsert (body = game JSON; `id` must match path) |
 | DELETE | `/games/{id}` | Bearer | delete |
-| GET | `/rosters?limit=` | Bearer | list metadata **only** `{ rosterId, name, faction, updatedAt, points, unitCount }` |
+| GET | `/rosters?limit=` | Bearer | list metadata **only** — live `{ rosterId, name, faction, updatedAt, points, unitCount }` and tombstones `{ rosterId, deleted: true, deletedAt }` |
 | GET | `/rosters/{id}` | Bearer | full roster blob |
 | PUT | `/rosters/{id}` | Bearer | idempotent upsert (body = roster JSON; `id` must match path; a wizard draft is rejected 422) |
-| DELETE | `/rosters/{id}` | Bearer | delete |
+| DELETE | `/rosters/{id}?at=` | Bearer | tombstone (`at` = deleting client's epoch-ms clock; defaults to the server's) |
 
-`/rosters` mirrors `/games` with one deliberate difference: the list endpoint returns metadata
+`/rosters` mirrors `/games` with two deliberate differences. The list endpoint returns metadata
 without blobs, so entering the app's roster screen costs one small request and only the lists
-whose `updatedAt` actually moved are downloaded. `updatedAt` is the client's epoch-ms timestamp
-and is what its last-write-wins merge compares on. Caps: 32 KB per roster, 200 rosters per user.
+whose `updatedAt` actually moved are downloaded. And **DELETE tombstones instead of removing**:
+the row stays, emptied of everything but its id and `deleted_at`, and the list endpoint reports
+it — otherwise a second device still holding the list would see an id the cloud lacks and upload
+it straight back. A tombstone is outranked by a list saved after it (both timestamps are the
+client's epoch-ms clock, so they compare directly), and tombstones older than 180 days are swept
+on the next delete. Caps: 32 KB per roster, 200 rosters per user; tombstones don't count.
 
 ## Local development
 
@@ -89,6 +93,30 @@ Then, **first time only**:
 2. `npm run migrate` against the new YDB (set `YDB_ENDPOINT`/`YDB_DATABASE` from outputs).
 3. Register the production redirect URI (`https://api.wh11ed.ru/auth/yandex/callback`)
    in the Yandex OAuth cabinet.
+
+### Rolling out a change that touches the schema
+
+**Order matters, always the same one — schema, then function, then client.** A function version
+that queries a column the database doesn't have yet fails every request touching it; a database
+with a column nothing reads yet costs nothing. The frontend goes last because it is the only
+layer that tolerates the others being behind (every cloud call there is best-effort).
+
+1. **`npm run migrate`** — idempotent (`CREATE TABLE IF NOT EXISTS` / `ALTER`), so re-running is
+   safe. Needs `YDB_ENDPOINT`/`YDB_DATABASE` and a `YDB_ACCESS_TOKEN` (`yc iam create-token`).
+   Note the file's own caveat: `CREATE TABLE IF NOT EXISTS` does **not** add a column to a table
+   that already exists — a new column on a live table needs its own `ALTER TABLE … ADD COLUMN`
+   statement in the list.
+2. **`bash scripts/deploy.sh`** — typecheck + bundle + zip + `terraform apply`. A direct
+   `yc serverless function version create` is the fallback used when Terraform state has drifted.
+3. **Smoke-test with a real token** before believing it: `GET /health`, then a
+   `GET`/`PUT`/`GET`/`DELETE` round trip on the endpoints that changed.
+4. **Frontend** (`wh11ed/deploy.sh`) — only if the client half is also ready to ship.
+
+#### Pending: roster sync is written but NOT deployed (as of 2026-08-22)
+
+`/rosters` + the `rosters` table exist in this repo and pass `npm test`, but **nothing has been
+migrated or deployed yet**, and the frontend half sits unmerged on `wh11ed`'s `feat/roster-builder`.
+Run the four steps above when it's time to ship. Delete this section once it's out.
 
 ## Security notes
 - TLS only; CORS locked to `ALLOWED_ORIGINS` with credentials (no wildcard).
