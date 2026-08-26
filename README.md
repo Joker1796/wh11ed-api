@@ -125,18 +125,11 @@ search of the whole machine turns up neither `*.tfstate` nor `secret.auto.tfvars
 memory, timeout, service account and the Lockbox secret bindings). Restoring IaC means importing
 the eleven resources into a fresh state — a separate job, not something to improvise mid-deploy.
 
-**`npm run migrate` does not run.** `ydb-sdk` 5.11.1 exports `TokenAuthService` and friends as
-named exports from its ESM build but keeps `Driver` on the default export only, so `src/db/driver.ts`
-throws `does not provide an export named 'Driver'` under tsx. Production never sees this because
-esbuild bundles it. Until the import is fixed, bundle the migration the same way the handler is
-bundled and run the artefact:
-
-```bash
-node -e "import('esbuild').then(({build})=>build({entryPoints:['scripts/migrate.ts'],bundle:true,\
-  platform:'node',target:'node22',format:'cjs',outfile:'dist/migrate.cjs',\
-  external:['@yandex-cloud/nodejs-sdk/*']}))"
-node --env-file=.env dist/migrate.cjs
-```
+**`npm run migrate` broke once and is fixed.** ydb-sdk 5.11.1's ESM build omits exactly one name
+from its named exports — `Driver` — so importing it by name threw under Node's own ESM resolution
+while esbuild (which builds the deployed bundle) papered over it. `src/db/driver.ts` now takes the
+class off the default export, which works under both. If a future bump makes `import { Driver }`
+work again, that comment can go.
 
 ## Security notes
 - TLS only; CORS locked to `ALLOWED_ORIGINS` with credentials (no wildcard).

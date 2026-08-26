@@ -1,4 +1,12 @@
-import { Driver, TokenAuthService, Ydb, type IAuthService } from 'ydb-sdk'
+// `Driver` comes off the default export on purpose. ydb-sdk 5.11.1 ships an ESM build whose named
+// exports are missing exactly one thing — Driver — while TokenAuthService, TypedValues and Ydb are
+// all exported by name. Importing Driver by name works under esbuild (which is how the deployed
+// bundle is built) but throws `does not provide an export named 'Driver'` under Node's own ESM
+// resolution, which is what `npm run migrate` and `npm run dev` use. Off the default export it
+// works under both. Drop this the day upstream fixes its ESM build.
+import ydb, { TokenAuthService, Ydb, type IAuthService, type Driver } from 'ydb-sdk'
+
+const { Driver: DriverClass } = ydb
 import { toSnakeCaseKeys } from './rows.js'
 import { config } from '../config.js'
 import { MetadataTokenAuthService } from './metadata-auth.js'
@@ -19,7 +27,7 @@ function makeAuthService(): IAuthService {
 export function getDriver(): Promise<Driver> {
   if (!driverPromise) {
     driverPromise = (async () => {
-      const driver = new Driver({
+      const driver = new DriverClass({
         endpoint: config.ydb.endpoint,
         database: config.ydb.database,
         authService: makeAuthService(),
