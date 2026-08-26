@@ -106,17 +106,37 @@ layer that tolerates the others being behind (every cloud call there is best-eff
    Note the file's own caveat: `CREATE TABLE IF NOT EXISTS` does **not** add a column to a table
    that already exists — a new column on a live table needs its own `ALTER TABLE … ADD COLUMN`
    statement in the list.
-2. **`bash scripts/deploy.sh`** — typecheck + bundle + zip + `terraform apply`. A direct
-   `yc serverless function version create` is the fallback used when Terraform state has drifted.
+2. **Build and ship the function.** `npm run build` + zip `dist/{handler.js,package.json}`, then
+   `yc serverless function version create`. `scripts/deploy.sh` still ends in `terraform apply`
+   and therefore does NOT work — see the note below.
 3. **Smoke-test with a real token** before believing it: `GET /health`, then a
    `GET`/`PUT`/`GET`/`DELETE` round trip on the endpoints that changed.
 4. **Frontend** (`wh11ed/deploy.sh`) — only if the client half is also ready to ship.
 
-#### Pending: roster sync is written but NOT deployed (as of 2026-08-22)
+#### Two things the steps above no longer describe (2026-08-26)
 
-`/rosters` + the `rosters` table exist in this repo and pass `npm test`, but **nothing has been
-migrated or deployed yet**, and the frontend half sits unmerged on `wh11ed`'s `feat/roster-builder`.
-Run the four steps above when it's time to ship. Delete this section once it's out.
+**Terraform is not usable — the state is gone, not drifted.** It was a local state file (there is
+no `backend` block in `infra/versions.tf`) living in a checkout that has since been deleted; a
+search of the whole machine turns up neither `*.tfstate` nor `secret.auto.tfvars`. Running
+`terraform apply` against an empty state would try to CREATE all eleven resources, including
+`yandex_ydb_database_serverless` — the database holding users' games. Deploy with
+`yc serverless function version create` instead, mirroring the live version's config
+(`yc serverless function version get <id>` prints everything you need: runtime, entrypoint,
+memory, timeout, service account and the Lockbox secret bindings). Restoring IaC means importing
+the eleven resources into a fresh state — a separate job, not something to improvise mid-deploy.
+
+**`npm run migrate` does not run.** `ydb-sdk` 5.11.1 exports `TokenAuthService` and friends as
+named exports from its ESM build but keeps `Driver` on the default export only, so `src/db/driver.ts`
+throws `does not provide an export named 'Driver'` under tsx. Production never sees this because
+esbuild bundles it. Until the import is fixed, bundle the migration the same way the handler is
+bundled and run the artefact:
+
+```bash
+node -e "import('esbuild').then(({build})=>build({entryPoints:['scripts/migrate.ts'],bundle:true,\
+  platform:'node',target:'node22',format:'cjs',outfile:'dist/migrate.cjs',\
+  external:['@yandex-cloud/nodejs-sdk/*']}))"
+node --env-file=.env dist/migrate.cjs
+```
 
 ## Security notes
 - TLS only; CORS locked to `ALLOWED_ORIGINS` with credentials (no wildcard).
