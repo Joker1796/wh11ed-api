@@ -8,12 +8,12 @@ finished games and rosters. `localStorage` stays the primary store; the cloud is
 - **DB:** YDB serverless (scales to zero — effectively free at this scale)
 - **Code:** TypeScript + [Hono](https://hono.dev), runtime-agnostic via a thin adapter
 - **Secrets:** Yandex Lockbox (injected as env vars)
-- **IaC:** Terraform (`infra/`)
+- **Infra:** described in Terraform (`infra/`), but deployed with the `yc` CLI — see Deploy
 
 ## Architecture
 
 ```
-SPA (wh11ed.ru)  ──fetch──▶  API Gateway (api.wh11ed.ru)  ──▶  Cloud Function  ──▶  YDB
+SPA (wh-rules.ru)  ──fetch──▶  API Gateway (api.wh-rules.ru)  ──▶  Cloud Function  ──▶  YDB
    Bearer access token (in memory) on /games,/me                (Hono + adapter)      Lockbox
    credentials:'include' on /auth/refresh
 ```
@@ -83,15 +83,21 @@ OAuth locally needs an app registration with redirect URI
 ## Deploy
 
 ```bash
-# infra/secret.auto.tfvars (gitignored): jwt_signing_key, yandex_* + api_base_url etc.
-bash scripts/deploy.sh
+bash scripts/deploy.sh --dry-run   # build and print the plan, change nothing
+bash scripts/deploy.sh             # ship a new function version
 ```
 
-Then, **first time only**:
-1. Create the DNS records from the Terraform outputs: `CNAME api → <gateway_default_domain>` and
-   the certificate-validation `CNAME`. Wait for the managed cert to reach **Issued**.
-2. `npm run migrate` against the new YDB (set `YDB_ENDPOINT`/`YDB_DATABASE` from outputs).
-3. Register the production redirect URI (`https://api.wh11ed.ru/auth/yandex/callback`)
+It copies the config of the version currently serving traffic (runtime, memory, service account,
+environment, Lockbox bindings) and changes only the code, plus whatever a gitignored `deploy.env`
+overrides — so a secret binding cannot be silently dropped. Terraform is **not** the deploy path;
+see "Terraform is not usable" below.
+
+Then, **first time only** (a brand-new environment, not a routine deploy):
+1. Create the DNS records: `CNAME api → <gateway default domain>` (`yc serverless api-gateway get`)
+   and the certificate-validation `CNAME` from Certificate Manager. Wait for the managed cert to
+   reach **Issued**.
+2. `npm run migrate` against the new YDB (set `YDB_ENDPOINT`/`YDB_DATABASE` to its endpoint).
+3. Register the production redirect URI (`https://api.wh-rules.ru/auth/yandex/callback`)
    in the Yandex OAuth cabinet.
 
 ### Rolling out a change that touches the schema
@@ -106,14 +112,13 @@ layer that tolerates the others being behind (every cloud call there is best-eff
    Note the file's own caveat: `CREATE TABLE IF NOT EXISTS` does **not** add a column to a table
    that already exists — a new column on a live table needs its own `ALTER TABLE … ADD COLUMN`
    statement in the list.
-2. **Build and ship the function.** `npm run build` + zip `dist/{handler.js,package.json}`, then
-   `yc serverless function version create`. `scripts/deploy.sh` still ends in `terraform apply`
-   and therefore does NOT work — see the note below.
+2. **Build and ship the function** — `bash scripts/deploy.sh` (build, zip, and
+   `yc serverless function version create` off the live version's config).
 3. **Smoke-test with a real token** before believing it: `GET /health`, then a
    `GET`/`PUT`/`GET`/`DELETE` round trip on the endpoints that changed.
 4. **Frontend** (`wh11ed/deploy.sh`) — only if the client half is also ready to ship.
 
-#### Two things the steps above no longer describe (2026-08-26)
+#### Two things worth knowing before you deploy (2026-08-26)
 
 **Terraform is not usable — the state is gone, not drifted.** It was a local state file (there is
 no `backend` block in `infra/versions.tf`) living in a checkout that has since been deleted; a
