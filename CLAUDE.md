@@ -44,7 +44,7 @@ npm test           # node --test over test/*.test.ts (adapter + domain unit test
 npm run typecheck  # tsc --noEmit
 npm run build      # typecheck + bundle to dist/handler.js (esbuild, single CJS file)
 npm run migrate    # create/alter YDB tables (idempotent); needs YDB_* env set
-bash scripts/deploy.sh  # build + zip + terraform apply (infra/)
+bash scripts/deploy.sh  # build + zip + ship a new function version with yc (NOT terraform)
 ```
 
 Run a single test: `node --import tsx --test test/game.test.ts`. Node ≥22 is required (uses the
@@ -128,7 +128,12 @@ is marked **external** (ydb-sdk lazily requires it for an auth path we don't use
 `metadata-auth.ts` replaces it), and a `dist/package.json` with `"type":"commonjs"` is written so
 the CJS bundle loads correctly despite the root being `"type":"module"`.
 
-Infra is Terraform in `infra/` (Cloud Function, API Gateway with `openapi.yaml`, YDB, Lockbox,
-service accounts, managed cert). Secrets come from `infra/secret.auto.tfvars` (gitignored) or
-`TF_VAR_*`. First-ever deploy needs manual DNS + cert-validation CNAMEs and a one-time `npm run migrate`
-against the new YDB — see README "Deploy".
+`infra/` describes the live infrastructure in Terraform (Cloud Function, API Gateway with
+`openapi.yaml`, YDB, Lockbox, service accounts, managed cert) but **cannot deploy it**: the state
+was a local file in a checkout that no longer exists, and no machine has a copy. An apply from an
+empty state would try to CREATE all eleven resources, `yandex_ydb_database_serverless` — users'
+games and army lists — among them. Treat `infra/` as documentation until somebody imports the
+resources into a fresh state, and deploy with `scripts/deploy.sh`, which copies the live version's
+config (runtime, memory, service account, env, Lockbox bindings) and changes only the code plus
+whatever a gitignored `deploy.env` overrides. First-ever deploy of a NEW environment still needs
+manual DNS + cert-validation CNAMEs and a one-time `npm run migrate` — see README "Deploy".

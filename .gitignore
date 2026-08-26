@@ -3,6 +3,8 @@ dist/
 *.zip
 .env
 .env.local
+# Per-deploy env overrides for scripts/deploy.sh — machine-local, never committed.
+deploy.env
 *.tfstate
 *.tfstate.*
 .terraform/
