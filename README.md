@@ -63,6 +63,64 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | PUT | `/rosters/{id}` | Bearer | idempotent upsert (body = roster JSON; `id` must match path; a wizard draft is rejected 422) |
 | DELETE | `/rosters/{id}?at=` | Bearer | tombstone (`at` = deleting client's epoch-ms clock; defaults to the server's) |
 
+### The broadcast feed (for custom overlays)
+
+`GET https://api.wh-rules.ru/broadcast/{token}` is a **public, read-only JSON feed of one live
+game**, meant to be fetched from anywhere: it answers with open CORS (`*`, no credentials) and
+exposes `ETag`, so a custom HTML/CSS overlay can poll it every second or two and send
+`If-None-Match` to get a cheap `304` while nothing moves. The app's own overlay
+(`wh-rules.ru/broadcast/{token}`) is one consumer of this feed and has no privileged data.
+
+```jsonc
+{
+  "updatedAt": "2026-09-13T09:41:02.118Z",   // when the phone last pushed
+  "payload": {
+    "v": 1,                     // payload version; fields are ADDED without bumping it
+    "gameType": "singles",      // | "doubles"
+    "scoreMode": "vp",          // what the players play to: "vp" | "bp"
+    "battleSize": "strikeForce",// "incursion" | "strikeForce" | "onslaught" | "combatPatrol"
+    "phase": "playing",         // | "finished"
+    "endReason": null,          // "played" | "early" | "friendly-concede" | "opponent-concede"
+    "round": 3,                 // battle round, 1..5
+    "turn": 0,                  // index into sides[] — whose turn it is
+    "battlePhase": "shooting",  // null unless the game keeps the phase clock
+    "layout": "B",
+    "twist": null,
+    "sides": [{
+      "teamName": "Alpha Strike",
+      "players": [{ "name": "Ann", "faction": "Orks", "factionSlug": "orks",
+                    "detachments": ["War Horde"] }],   // 2 entries in doubles
+      "role": "attacker",       // | "defender"
+      "forceType": null,        // doubles only: "unified" | "convenience"
+      "disposition": "Battle Lines",
+      "battleReady": true,
+      "firstTurn": true,
+      "cp": 3,
+      "primary": { "slug": "secure-asset", "name": "Secure Asset", "vp": 22 },
+      "secondaries": [          // drawn cards are face-up, so they are public
+        { "slug": "assassination", "name": "Assassination", "vp": 5, "active": true },
+        { "slug": "cleanse", "name": "Cleanse", "vp": 3, "active": false }  // set aside
+      ],
+      "secondaryVp": 8,
+      "battleReadyVp": 10,
+      "total": 40,              // primary + secondary + battle-ready, the VP result
+      "bp": 12,                 // Battle Points as they stand now
+      "rounds": [               // always five entries
+        { "round": 1, "primary": 8, "secondary": 3, "vp": 11, "cumulativeVp": 11, "bp": 10 }
+      ]
+    }]
+  }
+}
+```
+
+Notes for a consumer: `sides` is always two, `sides[0]` is the first-turn side, and every name
+is baked in (mission and faction names stay English by product convention) so an overlay needs
+no data files of its own. `rounds[i].bp` is the Battle Points that round would have ended on —
+the running result, not a per-round award; the two sides' `bp` always sum to 20. A token that
+was revoked, regenerated or left untouched for a week answers `404`; a token of the wrong shape
+`400`. Nothing here can be written through: the push endpoint is Bearer-only and lives
+elsewhere.
+
 **Broadcast** is the live-game overlay feed (OBS on a second device polls it every ~2 s while
 the phone tracks the match). The payload is opaque like a game blob — the client projects the
 read-only scoreboard itself, so nothing private can reach the public endpoint. The token is 128
