@@ -132,9 +132,14 @@ while IFS= read -r secret; do
   echo "  $env_var ← $(echo "$secret" | jq -r '.id'):$(echo "$secret" | jq -r '.key')"
   ARGS+=(--secret "id=$(echo "$secret" | jq -r '.id'),version-id=$(echo "$secret" | jq -r '.version_id'),key=$(echo "$secret" | jq -r '.key'),environment-variable=$env_var")
 done < <(echo "$CFG" | jq -c '.secrets // [] | .[]')
-for i in ${!EXTRA_ENV[@]+"${!EXTRA_ENV[@]}"}; do
-  echo "  ${EXTRA_ENV[$i]} ← deploy.secrets (current version)"
-done
+# `${!arr[@]}` cannot be guarded the usual way — `${!x+y}` is indirection, not "array indices, if
+# set", so the loop silently printed nothing while the bindings went out anyway. A plan that omits
+# what it ships is worse than no plan; count first instead.
+if [ "${#EXTRA_ENV[@]}" -gt 0 ]; then
+  for env_var in "${EXTRA_ENV[@]}"; do
+    echo "  $env_var ← deploy.secrets (current version)"
+  done
+fi
 ARGS+=(${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"})
 
 if [ -n "$DRY_RUN" ]; then
