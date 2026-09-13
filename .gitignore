@@ -5,6 +5,8 @@ dist/
 .env.local
 # Per-deploy env overrides for scripts/deploy.sh — machine-local, never committed.
 deploy.env
+# Extra Lockbox bindings for scripts/deploy.sh (ENV_VAR=secretId:key) — machine-local too.
+deploy.secrets
 *.tfstate
 *.tfstate.*
 .terraform/

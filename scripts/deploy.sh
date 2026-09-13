@@ -16,6 +16,12 @@
 # CHANGING AN ENV VAR: put `KEY=value` lines in a gitignored `deploy.env`; they override the live
 # values, everything else rides along unchanged. Deleting a var needs the yc call by hand.
 #
+# ADDING A SECRET: put `ENV_VAR=secretId:key` lines in a gitignored `deploy.secrets`. The live
+# version's bindings are copied as they are (pinned to the version they were deployed with —
+# that is deliberate: a deploy must not silently pick up a half-written secret), while a binding
+# named here is resolved to the secret's CURRENT version, which is what you want for one you
+# just created. A line for an env var the live version already binds replaces that binding.
+#
 # Prereqs: `yc` authenticated, and the folder holding the function selected.
 #
 # Usage:
@@ -93,11 +99,43 @@ for i in "${!OVERRIDE_KEYS[@]}"; do
 done
 
 # Secret bindings travel as references — id, version, key. No secret VALUE passes through here.
+# Ones declared in deploy.secrets are added (or replace a live binding of the same env var) and
+# resolved to the secret's current version; the rest are copied verbatim.
+declare -a EXTRA_ENV=()
+declare -a EXTRA_ARGS=()
+if [ -f deploy.secrets ]; then
+  while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue ;; esac
+    env_var="${line%%=*}"
+    ref="${line#*=}"
+    secret_id="${ref%%:*}"
+    secret_key="${ref#*:}"
+    version_id="$("$YC" lockbox secret get "$secret_id" --format json | jq -r '.current_version.id')"
+    if [ -z "$version_id" ] || [ "$version_id" = "null" ]; then
+      echo "✗ deploy.secrets: cannot resolve the current version of $secret_id" >&2
+      exit 1
+    fi
+    EXTRA_ENV+=("$env_var")
+    EXTRA_ARGS+=(--secret "id=$secret_id,version-id=$version_id,key=$secret_key,environment-variable=$env_var")
+  done < deploy.secrets
+fi
+
 echo "▶ Lockbox bindings"
 while IFS= read -r secret; do
-  echo "  $(echo "$secret" | jq -r '.environment_variable') ← $(echo "$secret" | jq -r '.id'):$(echo "$secret" | jq -r '.key')"
-  ARGS+=(--secret "id=$(echo "$secret" | jq -r '.id'),version-id=$(echo "$secret" | jq -r '.version_id'),key=$(echo "$secret" | jq -r '.key'),environment-variable=$(echo "$secret" | jq -r '.environment_variable')")
+  env_var="$(echo "$secret" | jq -r '.environment_variable')"
+  skip=""
+  for e in ${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}; do [ "$e" = "$env_var" ] && skip=1; done
+  if [ -n "$skip" ]; then
+    echo "  $env_var ← replaced by deploy.secrets"
+    continue
+  fi
+  echo "  $env_var ← $(echo "$secret" | jq -r '.id'):$(echo "$secret" | jq -r '.key')"
+  ARGS+=(--secret "id=$(echo "$secret" | jq -r '.id'),version-id=$(echo "$secret" | jq -r '.version_id'),key=$(echo "$secret" | jq -r '.key'),environment-variable=$env_var")
 done < <(echo "$CFG" | jq -c '.secrets // [] | .[]')
+for i in ${!EXTRA_ENV[@]+"${!EXTRA_ENV[@]}"}; do
+  echo "  ${EXTRA_ENV[$i]} ← deploy.secrets (current version)"
+done
+ARGS+=(${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"})
 
 if [ -n "$DRY_RUN" ]; then
   echo "▶ --dry-run: nothing was deployed."
