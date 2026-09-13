@@ -113,6 +113,14 @@ exposes `ETag`, so a custom HTML/CSS overlay can poll it every second or two and
 }
 ```
 
+**Polling etiquette.** Send `If-None-Match` and poll no faster than once a second: the gateway's
+budget is 600 requests a minute for the WHOLE API (logins and sync included), and the app's own
+overlay spends 30 of them per viewer at its 2-second cadence. The read protects itself — a
+warm-instance micro-cache (1 s) means every viewer of one game shares a single database read,
+responses carry `Cache-Control: public, max-age=1`, and a single IP is capped at 120 reads a
+minute (`429` with `Retry-After: 1` past that) so one runaway client cannot spend the budget
+everyone else needs.
+
 Notes for a consumer: `sides` is always two, `sides[0]` is the first-turn side, and every name
 is baked in (mission and faction names stay English by product convention) so an overlay needs
 no data files of its own. `rounds[i].bp` is the Battle Points that round would have ended on —

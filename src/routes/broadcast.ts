@@ -51,16 +51,65 @@ broadcastRoutes.put('/live/:gameId', requireAuth, async (c) => {
   return c.json({ ok: true })
 })
 
+// ── Protecting the read ───────────────────────────────────────────────────────────────────
+// The gateway's budget is 600 requests a MINUTE for the whole API — logins and sync included —
+// and one overlay at our own 2-second cadence spends 30 of them. So the public read carries
+// two brakes of its own.
+//
+// 1. A warm-instance micro-cache: every viewer of one game shares a single YDB read per
+//    second, instead of one each. It is deliberately shorter than the poll interval, so
+//    nobody ever sees state older than the tick they asked on.
+const READ_TTL_MS = 1000
+type CachedRead = { at: number; row: { payload: unknown | null; updatedAt: string | null } | null }
+const readCache = new Map<string, CachedRead>()
+
+async function readBroadcast(token: string, now: number) {
+  const hit = readCache.get(token)
+  if (hit && now - hit.at < READ_TTL_MS) return hit.row
+  const row = await getBroadcastByToken(token)
+  readCache.set(token, { at: now, row })
+  if (readCache.size > 5000) readCache.clear() // an unbounded map is the only way this bites
+  return row
+}
+
+// 2. A per-IP ceiling, generous enough for a hand-built overlay polling twice a second and
+//    tight enough that a runaway one cannot spend the whole gateway budget. Warm-instance
+//    memory, like the feedback route's: an abuse fence, not an accounting system.
+const RATE_WINDOW_MS = 60 * 1000
+const MAX_READS_PER_MIN = 120
+const readHits = new Map<string, number[]>()
+function readThrottled(ip: string, now: number): boolean {
+  const hits = (readHits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS)
+  if (hits.length >= MAX_READS_PER_MIN) {
+    readHits.set(ip, hits)
+    return true
+  }
+  hits.push(now)
+  readHits.set(ip, hits)
+  if (readHits.size > 10000) readHits.clear()
+  return false
+}
+
 // The public read-only state — what OBS polls every couple of seconds. ETag/304 keep the idle
 // polls nearly free: the ETag is the row's updated_at, so an unchanged game costs no body.
 broadcastRoutes.get('/:token', async (c) => {
   const parsed = broadcastTokenSchema.safeParse(c.req.param('token'))
   if (!parsed.success) return c.json({ error: 'bad_token' }, 400)
-  const row = await getBroadcastByToken(parsed.data)
+
+  const now = Date.now()
+  const ip = (c.req.header('X-Forwarded-For') || '').split(',')[0]?.trim() || 'unknown'
+  if (readThrottled(ip, now)) {
+    c.header('Retry-After', '1')
+    return c.json({ error: 'too_many' }, 429)
+  }
+
+  const row = await readBroadcast(parsed.data, now)
   if (!row) return c.json({ error: 'not_found' }, 404)
 
   const etag = `"${row.updatedAt || 'empty'}"`
-  c.header('Cache-Control', 'no-store')
+  // A second of freshness, not none: a browser coalesces a burst on its own, and the data is
+  // at most that stale anyway. An overlay that insists on bypassing it still gets its 304.
+  c.header('Cache-Control', 'public, max-age=1')
   c.header('ETag', etag)
   if (c.req.header('If-None-Match') === etag) return c.body(null, 304)
   return c.json({ payload: row.payload, updatedAt: row.updatedAt })
