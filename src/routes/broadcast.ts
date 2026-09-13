@@ -56,10 +56,10 @@ broadcastRoutes.put('/live/:gameId', requireAuth, async (c) => {
 // and one overlay at our own 2-second cadence spends 30 of them. So the public read carries
 // two brakes of its own.
 //
-// 1. A warm-instance micro-cache: every viewer of one game shares a single YDB read per
-//    second, instead of one each. It is deliberately shorter than the poll interval, so
+// 1. A warm-instance micro-cache: every viewer of one game shares one YDB read per two
+//    seconds instead of one each. Shorter than the built-in overlay's five-second tick, so
 //    nobody ever sees state older than the tick they asked on.
-const READ_TTL_MS = 1000
+const READ_TTL_MS = 2000
 type CachedRead = { at: number; row: { payload: unknown | null; updatedAt: string | null } | null }
 const readCache = new Map<string, CachedRead>()
 
@@ -72,11 +72,12 @@ async function readBroadcast(token: string, now: number) {
   return row
 }
 
-// 2. A per-IP ceiling, generous enough for a hand-built overlay polling twice a second and
-//    tight enough that a runaway one cannot spend the whole gateway budget. Warm-instance
-//    memory, like the feedback route's: an abuse fence, not an accounting system.
+// 2. A per-IP ceiling of one read a second sustained — five times what the built-in overlay
+//    asks for, and tight enough that a runaway client cannot spend the gateway budget the
+//    whole API shares. Warm-instance memory, like the feedback route's: an abuse fence, not
+//    an accounting system.
 const RATE_WINDOW_MS = 60 * 1000
-const MAX_READS_PER_MIN = 120
+const MAX_READS_PER_MIN = 60
 const readHits = new Map<string, number[]>()
 function readThrottled(ip: string, now: number): boolean {
   const hits = (readHits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS)
@@ -99,7 +100,7 @@ broadcastRoutes.get('/:token', async (c) => {
   const now = Date.now()
   const ip = (c.req.header('X-Forwarded-For') || '').split(',')[0]?.trim() || 'unknown'
   if (readThrottled(ip, now)) {
-    c.header('Retry-After', '1')
+    c.header('Retry-After', '2')
     return c.json({ error: 'too_many' }, 429)
   }
 
@@ -107,9 +108,9 @@ broadcastRoutes.get('/:token', async (c) => {
   if (!row) return c.json({ error: 'not_found' }, 404)
 
   const etag = `"${row.updatedAt || 'empty'}"`
-  // A second of freshness, not none: a browser coalesces a burst on its own, and the data is
-  // at most that stale anyway. An overlay that insists on bypassing it still gets its 304.
-  c.header('Cache-Control', 'public, max-age=1')
+  // Two seconds of freshness, not none: a browser coalesces a burst on its own, and the data
+  // is at most that stale anyway. An overlay that insists on bypassing it still gets its 304.
+  c.header('Cache-Control', 'public, max-age=2')
   c.header('ETag', etag)
   if (c.req.header('If-None-Match') === etag) return c.body(null, 304)
   return c.json({ payload: row.payload, updatedAt: row.updatedAt })
