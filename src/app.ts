@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { corsOrigin } from './config.js'
 import { authRoutes } from './routes/auth.js'
+import { broadcastRoutes } from './routes/broadcast.js'
 import { gameRoutes } from './routes/games.js'
 import { meRoutes } from './routes/me.js'
 import { rosterRoutes } from './routes/rosters.js'
@@ -24,6 +25,9 @@ app.use(
 app.get('/health', (c) => c.json({ status: 'ok' }))
 
 app.route('/auth', authRoutes)
+// NOT Bearer-gated as a module: /broadcast/:token is the public read the OBS overlay polls
+// (the unguessable token is the credential); the live push inside carries its own requireAuth.
+app.route('/broadcast', broadcastRoutes)
 app.route('/games', gameRoutes)
 app.route('/rosters', rosterRoutes)
 app.route('/me', meRoutes)

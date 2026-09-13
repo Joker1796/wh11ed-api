@@ -90,6 +90,10 @@ export const config = {
   // cap is lower than games' because a collection of lists is curated, not accumulated.
   maxRosterBytes: 32 * 1024,
   maxRostersPerUser: 200,
+  // Live-broadcast payload (the client-projected read-only scoreboard, not the full game) and
+  // how long an untouched broadcast row lives before YDB's TTL sweeps it.
+  maxBroadcastBytes: 16 * 1024,
+  broadcastTtlDays: 7,
 } as const
 
 // Only Yandex is supported. The provider abstraction is kept (rather than hardcoded) so another
