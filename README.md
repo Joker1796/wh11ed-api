@@ -216,6 +216,23 @@ while esbuild (which builds the deployed bundle) papered over it. `src/db/driver
 class off the default export, which works under both. If a future bump makes `import { Driver }`
 work again, that comment can go.
 
+## Feedback notifications (optional)
+
+Bug reports always land in the `feedback` table and are read with `npm run feedback:list`. A
+mail notification on top is opt-in and inert until four env vars exist — `POSTBOX_KEY_ID` and
+`POSTBOX_SECRET` (a Yandex Cloud Postbox API key with the `yc.postbox.send` scope, bound from
+Lockbox) plus `FEEDBACK_MAIL_FROM` (an address verified in Postbox) and `FEEDBACK_MAIL_TO`.
+Missing any of them, `sendFeedbackMail` returns immediately and nothing else changes.
+
+The send is deliberately defensive: a 4-second timeout, at most 20 mails an hour per warm
+instance, and every error swallowed after a log line. The report is saved before the mail is
+attempted, so a broken SMTP path can lose a notification but never a report.
+
+One-time setup, all of it outside this repo: create the sending service account with the
+`postbox.sender` role, create the API key, add the Postbox address for the domain and its DKIM
+records in the DNS zone, put the key in Lockbox, then bind the secret and set the two addresses
+in `deploy.env`.
+
 ## Security notes
 - TLS only; CORS locked to `ALLOWED_ORIGINS` with credentials (no wildcard).
 - Refresh tokens are opaque, stored only as SHA-256 hashes, single-use (rotated on every refresh), and

@@ -4,6 +4,7 @@ import { ZodError } from 'zod'
 import { verifyAccessToken } from '../auth/jwt.js'
 import { parseFeedback, FeedbackPayloadError } from '../domain/feedback.js'
 import { insertFeedback } from '../db/feedback.repo.js'
+import { sendFeedbackMail } from '../mail/postbox.js'
 
 // Bug reports. Public on purpose — requiring an account would silence the players most worth
 // hearing from; a Bearer that happens to ride along is verified and recorded, nothing more.
@@ -59,15 +60,28 @@ feedbackRoutes.post('/', async (c) => {
     userId = claims?.sub ?? null
   }
 
+  const feedbackId = randomUUID()
+  const createdAt = new Date(now).toISOString()
   await insertFeedback({
-    feedbackId: randomUUID(),
-    createdAt: new Date(now).toISOString(),
+    feedbackId,
+    createdAt,
     userId,
     appVersion: fb.appVersion,
     route: fb.route,
     message: fb.message,
     contextJson: fb.contextJson,
     attachmentJson: fb.attachmentJson,
+  })
+  // The database write is what "sent" means; the mail is a courtesy on top and cannot fail
+  // the request (sendFeedbackMail swallows its own errors and caps its own time).
+  await sendFeedbackMail({
+    feedbackId,
+    createdAt,
+    userId,
+    appVersion: fb.appVersion,
+    route: fb.route,
+    message: fb.message,
+    hasAttachment: !!fb.attachmentJson,
   })
   return c.json({ ok: true })
 })

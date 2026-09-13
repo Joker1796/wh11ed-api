@@ -94,6 +94,29 @@ export const config = {
   // how long an untouched broadcast row lives before YDB's TTL sweeps it.
   maxBroadcastBytes: 16 * 1024,
   broadcastTtlDays: 7,
+  // Feedback notifications through Yandex Cloud Postbox (SMTP). Entirely optional: with no
+  // key bound the sender is inert and reports simply wait in `npm run feedback:list`. The
+  // credentials come from Lockbox like every other secret; the addresses are plain env.
+  mail: {
+    get keyId(): string {
+      return process.env.POSTBOX_KEY_ID || ''
+    },
+    get secret(): string {
+      return process.env.POSTBOX_SECRET || ''
+    },
+    get from(): string {
+      return process.env.FEEDBACK_MAIL_FROM || ''
+    },
+    get to(): string {
+      return process.env.FEEDBACK_MAIL_TO || ''
+    },
+    get enabled(): boolean {
+      return !!(this.keyId && this.secret && this.from && this.to)
+    },
+    host: 'postbox.cloud.yandex.net',
+    port: 587,
+  },
+
   // Bug reports: the player's text, the auto-collected tech context, the opt-in snapshot.
   maxFeedbackMessageBytes: 4 * 1024,
   maxFeedbackContextBytes: 16 * 1024,
