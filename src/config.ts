@@ -94,6 +94,10 @@ export const config = {
   // how long an untouched broadcast row lives before YDB's TTL sweeps it.
   maxBroadcastBytes: 16 * 1024,
   broadcastTtlDays: 7,
+  // Bug reports: the player's text, the auto-collected tech context, the opt-in snapshot.
+  maxFeedbackMessageBytes: 4 * 1024,
+  maxFeedbackContextBytes: 16 * 1024,
+  maxFeedbackAttachmentBytes: 64 * 1024,
 } as const
 
 // Only Yandex is supported. The provider abstraction is kept (rather than hardcoded) so another

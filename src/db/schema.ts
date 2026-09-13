@@ -83,6 +83,22 @@ const STATEMENTS: string[] = [
    );`,
 
   `ALTER TABLE broadcasts SET (TTL = Interval("PT0S") ON expires_at);`,
+
+  // Player bug reports (POST /feedback — public, anonymous unless a Bearer rode along).
+  // `context` is the client-collected tech block (version/route/UA/recent JS errors) and
+  // `attachment` an optional roster/game snapshot the player explicitly agreed to include —
+  // both opaque JSON, read by a human via `npm run feedback:list`, never queried server-side.
+  `CREATE TABLE IF NOT EXISTS feedback (
+     feedback_id Utf8 NOT NULL,
+     created_at Utf8,
+     user_id Utf8,
+     app_version Utf8,
+     route Utf8,
+     message Utf8,
+     context Utf8,
+     attachment Utf8,
+     PRIMARY KEY (feedback_id)
+   );`,
 ]
 
 export async function migrate(): Promise<void> {

@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import { corsOrigin } from './config.js'
 import { authRoutes } from './routes/auth.js'
 import { broadcastRoutes } from './routes/broadcast.js'
+import { feedbackRoutes } from './routes/feedback.js'
 import { gameRoutes } from './routes/games.js'
 import { meRoutes } from './routes/me.js'
 import { rosterRoutes } from './routes/rosters.js'
@@ -11,16 +12,29 @@ import { rosterRoutes } from './routes/rosters.js'
 // Node server both drive it the same way.
 export const app = new Hono()
 
-app.use(
-  '*',
-  cors({
-    origin: corsOrigin,
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Authorization', 'Content-Type'],
-    credentials: true,
-    maxAge: 600,
-  }),
-)
+const appCors = cors({
+  origin: corsOrigin,
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Authorization', 'Content-Type'],
+  credentials: true,
+  maxAge: 600,
+})
+// The public broadcast read is third-party-embeddable BY DESIGN: custom HTML/CSS overlays
+// live on other origins (or OBS-local files) and fetch it directly. Open CORS, no
+// credentials, ETag exposed so a polling client can send If-None-Match. Everything else —
+// including /broadcast/live — keeps the allowlist+credentials policy above.
+const openCors = cors({
+  origin: '*',
+  allowMethods: ['GET', 'OPTIONS'],
+  allowHeaders: ['If-None-Match'],
+  exposeHeaders: ['ETag'],
+  maxAge: 86400,
+})
+app.use('*', (c, next) => {
+  const p = c.req.path
+  const isPublicBroadcast = p.startsWith('/broadcast/') && !p.startsWith('/broadcast/live/')
+  return isPublicBroadcast ? openCors(c, next) : appCors(c, next)
+})
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
 
@@ -28,6 +42,8 @@ app.route('/auth', authRoutes)
 // NOT Bearer-gated as a module: /broadcast/:token is the public read the OBS overlay polls
 // (the unguessable token is the credential); the live push inside carries its own requireAuth.
 app.route('/broadcast', broadcastRoutes)
+// Public bug reports (anonymous unless a Bearer rides along) — see routes/feedback.ts.
+app.route('/feedback', feedbackRoutes)
 app.route('/games', gameRoutes)
 app.route('/rosters', rosterRoutes)
 app.route('/me', meRoutes)
