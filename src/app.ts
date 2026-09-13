@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import { corsOrigin } from './config.js'
 import { authRoutes } from './routes/auth.js'
 import { broadcastRoutes } from './routes/broadcast.js'
+import { feedbackRoutes } from './routes/feedback.js'
 import { gameRoutes } from './routes/games.js'
 import { meRoutes } from './routes/me.js'
 import { rosterRoutes } from './routes/rosters.js'
@@ -28,6 +29,8 @@ app.route('/auth', authRoutes)
 // NOT Bearer-gated as a module: /broadcast/:token is the public read the OBS overlay polls
 // (the unguessable token is the credential); the live push inside carries its own requireAuth.
 app.route('/broadcast', broadcastRoutes)
+// Public bug reports (anonymous unless a Bearer rides along) — see routes/feedback.ts.
+app.route('/feedback', feedbackRoutes)
 app.route('/games', gameRoutes)
 app.route('/rosters', rosterRoutes)
 app.route('/me', meRoutes)

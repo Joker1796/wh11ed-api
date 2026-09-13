@@ -57,6 +57,7 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | DELETE | `/games/{id}/broadcast` | Bearer | disable (the share link dies) |
 | PUT | `/broadcast/live/{gameId}` | Bearer | push the latest client-projected read-only state (≤16 KB; 404 until enabled) |
 | GET | `/broadcast/{token}` | – | **public** read for the OBS overlay: `{ payload, updatedAt }`, `ETag`/`If-None-Match` → 304 |
+| POST | `/feedback` | – | anonymous bug report `{ message, context?, attachment?, website? }` (honeypot `website`; per-IP throttle; read via `npm run feedback:list`) |
 | GET | `/rosters?limit=` | Bearer | list metadata **only** — live `{ rosterId, name, faction, updatedAt, points, unitCount }` and tombstones `{ rosterId, deleted: true, deletedAt }` |
 | GET | `/rosters/{id}` | Bearer | full roster blob |
 | PUT | `/rosters/{id}` | Bearer | idempotent upsert (body = roster JSON; `id` must match path; a wizard draft is rejected 422) |

@@ -13,7 +13,8 @@
     "build": "tsc --noEmit && node scripts/bundle.mjs",
     "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts",
     "migrate": "node --env-file-if-exists=.env --import tsx scripts/migrate.ts",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "feedback:list": "node --env-file-if-exists=.env --import tsx scripts/feedback-list.ts"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.12.5",
