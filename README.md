@@ -52,10 +52,23 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | GET | `/games/{id}` | Bearer | full game blob |
 | PUT | `/games/{id}` | Bearer | idempotent upsert (body = game JSON; `id` must match path) |
 | DELETE | `/games/{id}` | Bearer | delete |
+| POST | `/games/{id}/broadcast` | Bearer | enable **or regenerate** the game's broadcast → `{ token }` (a fresh token always replaces the old one, which stops resolving) |
+| GET | `/games/{id}/broadcast` | Bearer | `{ token }` of the enabled broadcast, 404 if none |
+| DELETE | `/games/{id}/broadcast` | Bearer | disable (the share link dies) |
+| PUT | `/broadcast/live/{gameId}` | Bearer | push the latest client-projected read-only state (≤16 KB; 404 until enabled) |
+| GET | `/broadcast/{token}` | – | **public** read for the OBS overlay: `{ payload, updatedAt }`, `ETag`/`If-None-Match` → 304 |
 | GET | `/rosters?limit=` | Bearer | list metadata **only** — live `{ rosterId, name, faction, updatedAt, points, unitCount }` and tombstones `{ rosterId, deleted: true, deletedAt }` |
 | GET | `/rosters/{id}` | Bearer | full roster blob |
 | PUT | `/rosters/{id}` | Bearer | idempotent upsert (body = roster JSON; `id` must match path; a wizard draft is rejected 422) |
 | DELETE | `/rosters/{id}?at=` | Bearer | tombstone (`at` = deleting client's epoch-ms clock; defaults to the server's) |
+
+**Broadcast** is the live-game overlay feed (OBS on a second device polls it every ~2 s while
+the phone tracks the match). The payload is opaque like a game blob — the client projects the
+read-only scoreboard itself, so nothing private can reach the public endpoint. The token is 128
+random bits (an unlisted-link model: the URL is the credential); rows live in the `broadcasts`
+table under a YDB TTL (`broadcastTtlDays`, 7 days past the last touch). The public GET is served
+under the normal CORS policy — our own overlay page is same-site; third-party overlay hosts are
+deliberately not supported (v1).
 
 `/rosters` mirrors `/games` with two deliberate differences. The list endpoint returns metadata
 without blobs, so entering the app's roster screen costs one small request and only the lists

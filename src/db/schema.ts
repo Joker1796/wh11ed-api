@@ -64,6 +64,25 @@ const STATEMENTS: string[] = [
 
   // TTL: expired sessions are purged automatically by YDB.
   `ALTER TABLE sessions SET (TTL = Interval("PT0S") ON expires_at);`,
+
+  // Live-game broadcast (the OBS overlay). One row per (user, game): a random public read
+  // token, the client-projected read-only payload, and a real Timestamp for TTL — a stream
+  // nobody has updated for a week is garbage, and sweeping it automatically means a stale
+  // token can never serve a months-old game. PK (user_id, game_id) so enabling twice (or
+  // regenerating) overwrites the row in place — the old token dies with the overwrite; the
+  // global index is what lets the public GET resolve a token without knowing the owner.
+  `CREATE TABLE IF NOT EXISTS broadcasts (
+     user_id Utf8 NOT NULL,
+     game_id Utf8 NOT NULL,
+     token Utf8,
+     payload Utf8,
+     updated_at Utf8,
+     expires_at Timestamp,
+     PRIMARY KEY (user_id, game_id),
+     INDEX idx_broadcasts_token GLOBAL ON (token)
+   );`,
+
+  `ALTER TABLE broadcasts SET (TTL = Interval("PT0S") ON expires_at);`,
 ]
 
 export async function migrate(): Promise<void> {

@@ -10,6 +10,8 @@ import {
   deleteGame,
   countGames,
 } from '../db/games.repo.js'
+import { newBroadcastToken, broadcastExpiry } from '../domain/broadcast.js'
+import { getBroadcast, upsertBroadcast, deleteBroadcast } from '../db/broadcasts.repo.js'
 
 export const gameRoutes = new Hono<{ Variables: AuthVars }>()
 
@@ -74,5 +76,40 @@ gameRoutes.delete('/:id', async (c) => {
   const idParsed = gameIdSchema.safeParse(c.req.param('id'))
   if (!idParsed.success) return c.json({ error: 'bad_id' }, 400)
   await deleteGame(c.var.userId, idParsed.data)
+  return c.body(null, 204)
+})
+
+// ── Live broadcast management (the public read + live push live in routes/broadcast.ts) ──────
+// POST is both "enable" and "regenerate": either way a fresh random token replaces whatever the
+// row held, and the old share link stops resolving. No game-existence check on purpose — the
+// live game lives on the phone (it is only PUT here once finished), so the cloud has nothing to
+// check against; an unused broadcast row costs nothing and the TTL sweeps it.
+gameRoutes.post('/:id/broadcast', async (c) => {
+  const idParsed = gameIdSchema.safeParse(c.req.param('id'))
+  if (!idParsed.success) return c.json({ error: 'bad_id' }, 400)
+  const token = newBroadcastToken()
+  const now = new Date()
+  await upsertBroadcast({
+    userId: c.var.userId,
+    gameId: idParsed.data,
+    token,
+    nowIso: now.toISOString(),
+    expiresAt: broadcastExpiry(now.getTime()),
+  })
+  return c.json({ token })
+})
+
+gameRoutes.get('/:id/broadcast', async (c) => {
+  const idParsed = gameIdSchema.safeParse(c.req.param('id'))
+  if (!idParsed.success) return c.json({ error: 'bad_id' }, 400)
+  const row = await getBroadcast(c.var.userId, idParsed.data)
+  if (!row) return c.json({ error: 'not_found' }, 404)
+  return c.json({ token: row.token })
+})
+
+gameRoutes.delete('/:id/broadcast', async (c) => {
+  const idParsed = gameIdSchema.safeParse(c.req.param('id'))
+  if (!idParsed.success) return c.json({ error: 'bad_id' }, 400)
+  await deleteBroadcast(c.var.userId, idParsed.data)
   return c.body(null, 204)
 })
