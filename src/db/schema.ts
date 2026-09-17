@@ -84,6 +84,68 @@ const STATEMENTS: string[] = [
 
   `ALTER TABLE broadcasts SET (TTL = Interval("PT0S") ON expires_at);`,
 
+  // A live game shared by several phones (routes/party.ts). Three tables, all under TTL, because
+  // a party is a single evening's thing and nothing here outlives the game it carried.
+  //
+  // `parties` — one row per shared game: the host's account (for reclaiming a lost phone), the
+  // invite (a link token, plain like a broadcast token — the link IS the credential — and a
+  // short-lived six-digit code), the global `seq` every write bumps (what a phone polls
+  // "since"), and whether the game is finished. Versions and counters are Uint32 — the one
+  // place this schema compares numbers server-side.
+  `CREATE TABLE IF NOT EXISTS parties (
+     party_id Utf8 NOT NULL,
+     host_user_id Utf8,
+     game_id Utf8,
+     invite_token Utf8,
+     code Utf8,
+     code_expires_at Utf8,
+     seq Uint32,
+     status Utf8,
+     created_at Utf8,
+     updated_at Utf8,
+     expires_at Timestamp,
+     PRIMARY KEY (party_id),
+     INDEX idx_parties_invite GLOBAL ON (invite_token),
+     INDEX idx_parties_code GLOBAL ON (code)
+   );`,
+  `ALTER TABLE parties SET (TTL = Interval("PT0S") ON expires_at);`,
+
+  // One row per phone in a party. The token is stored hashed like a refresh token — it grants
+  // writes. A kicked member keeps its row with `revoked_at` set (the seat is free, the token dead);
+  // the global index is how a Bearer resolves to its row without knowing the party.
+  `CREATE TABLE IF NOT EXISTS party_members (
+     party_id Utf8 NOT NULL,
+     member_id Utf8 NOT NULL,
+     token_hash Utf8,
+     role Utf8,
+     side Int32,
+     mi Int32,
+     name Utf8,
+     created_at Utf8,
+     last_seen_at Utf8,
+     revoked_at Utf8,
+     expires_at Timestamp,
+     PRIMARY KEY (party_id, member_id),
+     INDEX idx_party_members_token GLOBAL ON (token_hash)
+   );`,
+  `ALTER TABLE party_members SET (TTL = Interval("PT0S") ON expires_at);`,
+
+  // The five slices of the game, one row each, created with the party so every write is an
+  // UPDATE of an existing row. `version` is the slice's own optimistic-concurrency counter;
+  // `seq` is the party's global sequence at the slice's last write, which is what "give me what
+  // changed since N" selects on.
+  `CREATE TABLE IF NOT EXISTS party_state (
+     party_id Utf8 NOT NULL,
+     slice Utf8 NOT NULL,
+     version Uint32,
+     seq Uint32,
+     data Utf8,
+     updated_at Utf8,
+     expires_at Timestamp,
+     PRIMARY KEY (party_id, slice)
+   );`,
+  `ALTER TABLE party_state SET (TTL = Interval("PT0S") ON expires_at);`,
+
   // Player bug reports (POST /feedback — public, anonymous unless a Bearer rode along).
   // `context` is the client-collected tech block (version/route/UA/recent JS errors) and
   // `attachment` an optional roster/game snapshot the player explicitly agreed to include —

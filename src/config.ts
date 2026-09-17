@@ -94,6 +94,13 @@ export const config = {
   // how long an untouched broadcast row lives before YDB's TTL sweeps it.
   maxBroadcastBytes: 16 * 1024,
   broadcastTtlDays: 7,
+  // A shared live game (routes/party.ts): one slice of a game per write. A whole side after five
+  // rounds measures ~2 KB and a Strike Force list ~1–2 KB, so 32 KB is roomy without letting a
+  // slice approach the game cap. A party nobody touched for a week is garbage; a join code is
+  // typed across a table and dies in minutes.
+  maxPartySliceBytes: 32 * 1024,
+  partyTtlDays: 7,
+  partyCodeTtlMinutes: 10,
   // Feedback notifications through Yandex Cloud Postbox (SMTP). Entirely optional: with no
   // key bound the sender is inert and reports simply wait in `npm run feedback:list`. The
   // credentials come from Lockbox like every other secret; the addresses are plain env.

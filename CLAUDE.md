@@ -15,7 +15,7 @@ down, nobody loses a game; they lose sync.
 
 That framing explains the shape of the code:
 
-- **It's small on purpose.** Four tables, a handful of routes. The complexity in this product lives
+- **It's small on purpose.** A handful of tables, a handful of routes. The complexity in this product lives
   in the frontend; resist moving logic here.
 - **The game payload is an opaque blob.** `domain/game.ts` validates only the envelope the API
   actually needs and uses `.passthrough()` everywhere — the client owns the game's internal shape and
@@ -79,8 +79,9 @@ chosen at runtime: `YDB_ACCESS_TOKEN` (local dev) → `TokenAuthService`; empty 
 All queries go through `query<T>(yql, params)` — parameterized YQL only (param keys keep the
 leading `$`, values are `ydb-sdk` `TypedValues`); never string-interpolate user input.
 
-**Schema (`src/db/schema.ts`):** four tables — `users`, `games` (PK `(user_id, game_id)`),
-`rosters` (PK `(user_id, roster_id)`), `sessions`. JSON blobs and ISO timestamps are stored as `Utf8` (never queried server-side); only
+**Schema (`src/db/schema.ts`):** `users`, `games` (PK `(user_id, game_id)`),
+`rosters` (PK `(user_id, roster_id)`), `sessions`, `broadcasts`, `feedback`, and the three party
+tables (`parties`, `party_members`, `party_state`). JSON blobs and ISO timestamps are stored as `Utf8` (never queried server-side); only
 `sessions.expires_at` is a real `Timestamp` because a YDB **TTL** column auto-purges expired
 sessions. Migrations are a list of idempotent `CREATE TABLE IF NOT EXISTS` / `ALTER` statements.
 
@@ -102,6 +103,20 @@ live lists — a second device has no other way to learn a list was deleted else
 otherwise re-upload its copy. `tombstoneRoster` is an `UPDATE`, not an `UPSERT`, so deleting an id
 the cloud never held can't conjure a row; `purgeOldTombstones` sweeps anything older than 180 days
 on the next delete, which is why the table needs no TTL column.
+
+**Shared live game (`src/domain/party.ts`, `src/db/parties.repo.ts`, `src/routes/party.ts`):**
+the one place this service holds LIVE state rather than backups, and the one place it compares
+numbers server-side (slice versions, the party `seq` — `Uint32` columns). Everything that decides
+who may write what is in the domain module, pure, and `test/party.test.ts` covers it;
+`test/party-routes.test.ts` drives the routes end to end against an in-memory repo through
+`mock.module` (hence `--experimental-test-module-mocks` in `npm test`) — the YQL itself is the
+one thing no test here reaches, so a schema change is verified by `npm run migrate` + a manual
+round trip. `writeSlices` is the reason `driver.ts` grew `transaction()`: compare-then-write must
+be one serializable unit. Two credentials meet in the routes — the host's account JWT creates a
+party and reclaims it, then EVERY phone speaks with a per-party member token (`requireMember`,
+not `requireAuth`). Warm-instance caches (state 3 s, member rows 15 s, last-seen writes 30 s)
+are what keep four polling phones at one YDB read per party per tick; every admin action drops
+the entries it invalidates. The contract is in README "A shared live game".
 
 **Auth.** Authorization Code + PKCE; the client secret never leaves the server. **Host-aware
 domains:** the auth routes derive cookie domain / post-login redirect / OAuth `redirect_uri` from

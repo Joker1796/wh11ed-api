@@ -5,7 +5,11 @@ info:
 
 # Single greedy route: the gateway forwards every method/path to the function, which does its
 # own routing (Hono) and CORS. ${function_id} / ${gateway_sa_id} are filled by Terraform
-# templatefile(). A rate limit caps abuse/cost.
+# templatefile(). A rate limit caps abuse/cost — and it is the cost ceiling: at 142 ₽ per
+# million requests this number bounds the monthly bill. A shared live game (/party) is four
+# phones at a three-second tick ≈ 80 rpm per game, so this budget holds ~7 games together with
+# logins and backups; raise it before that feature reaches players. Terraform cannot apply this
+# file (README) — edit the live spec with `yc serverless api-gateway update` or the console.
 x-yc-apigateway:
   rateLimit:
     allRequests:

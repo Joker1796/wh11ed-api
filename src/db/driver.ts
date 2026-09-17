@@ -67,3 +67,31 @@ export async function query<T = Record<string, unknown>>(
 export async function executeScheme(text: string): Promise<void> {
   await query(text)
 }
+
+export type Runner = <T = Record<string, unknown>>(text: string, parameters?: QueryParams) => Promise<T[]>
+
+/**
+ * Run several queries in ONE serializable transaction. `fn` gets a runner bound to the
+ * transaction's session; the transaction commits when `fn` returns and rolls back when it
+ * throws. The party sync needs this: "compare the versions the client based its edit on, then
+ * write" must be one unit, or two phones writing the same slice in the same instant could both
+ * pass the check. YDB aborts one of two conflicting transactions, and the client's retry (a
+ * plain re-sync) resolves it — no lock table, no leases.
+ */
+export async function transaction<T>(fn: (run: Runner) => Promise<T>): Promise<T> {
+  const driver = await getDriver()
+  return driver.queryClient.doTx({
+    txSettings: { serializableReadWrite: {} },
+    fn: async (session) => {
+      const run: Runner = async (text, parameters = {}) => {
+        const { resultSets } = await session.execute({ text, parameters })
+        const out: unknown[] = []
+        for await (const rs of resultSets) {
+          for await (const row of rs.rows) out.push(toSnakeCaseKeys(row))
+        }
+        return out as never
+      }
+      return fn(run)
+    },
+  })
+}

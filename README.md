@@ -58,6 +58,20 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | PUT | `/broadcast/live/{gameId}` | Bearer | push the latest client-projected read-only state (≤16 KB; 404 until enabled) |
 | GET | `/broadcast/{token}` | – | **public** read for the OBS overlay: `{ payload, updatedAt }`, `ETag`/`If-None-Match` → 304 |
 | POST | `/feedback` | – | anonymous bug report `{ message, context?, attachment?, website? }` (honeypot `website`; per-IP throttle; read via `npm run feedback:list`) |
+| POST | `/party` | Bearer | the host shares the game in progress: `{ gameId, slices, seat, name }` → `{ partyId, memberId, memberToken, seq, versions, you, invite: { token, code, codeExpiresAt } }` |
+| POST | `/party/join` | – | exchange an invite for a member token: `{ code }` or `{ invite }` → `{ partyId, memberId, memberToken, seq, status, slices, members, you }` (per-IP throttle; the code lives 10 minutes) |
+| POST | `/party/{id}/reclaim` | Bearer | the creating account gets a fresh host token (a lost phone); same body as join's answer |
+| GET | `/party/{id}` | member | the whole game: `{ seq, status, slices, members, you }` |
+| POST | `/party/{id}/seat` | member | take a seat `{ side, mi, name }` → `{ seq, you }`; 409 `seat_taken` with `heldBy` when a live member holds it |
+| POST | `/party/{id}/sync` | member | `{ since, slices? }` → 204 nothing new · 200 `{ seq, status, you, written, slices }` · 409 `version_conflict` · 423 `read_only` · 403 `forbidden_slice` — see below |
+| POST | `/party/{id}/leave` | member | a guest leaves: its token dies, its seat is free (the host ends or hands over instead) |
+| GET | `/party/{id}/members` | member | who is in: `{ members: [{ memberId, name, side, mi, host, lastSeenAt, you }] }` |
+| GET | `/party/{id}/invite` | host | the current invite (`code` null once it expired) |
+| POST | `/party/{id}/invite` | host | a fresh code; `{ link: true }` also replaces the link token (the old link dies) |
+| POST | `/party/{id}/members/{mid}/seat` | host | move another member (`side: null` unseats) |
+| POST | `/party/{id}/members/{mid}/kick` | host | revoke that member's token now; its seat is free |
+| POST | `/party/{id}/host` | host | hand the host role to `{ memberId }` |
+| DELETE | `/party/{id}` | host | end the party: every row and every token |
 | GET | `/rosters?limit=` | Bearer | list metadata **only** — live `{ rosterId, name, faction, updatedAt, points, unitCount }` and tombstones `{ rosterId, deleted: true, deletedAt }` |
 | GET | `/rosters/{id}` | Bearer | full roster blob |
 | PUT | `/rosters/{id}` | Bearer | idempotent upsert (body = roster JSON; `id` must match path; a wizard draft is rejected 422) |
@@ -137,6 +151,52 @@ table under a YDB TTL (`broadcastTtlDays`, 7 days past the last touch). The publ
 under the normal CORS policy — our own overlay page is same-site; third-party overlay hosts are
 deliberately not supported (v1).
 
+### A shared live game (`/party`)
+
+Several phones run ONE game in progress: the host — the only one who needs an account — shares
+it, the others join by link, QR or a six-digit code and take a seat. The server is the authority
+on the game's state; the host owns the rights.
+
+**Slices.** The game travels in five independently versioned parts — the tracker's own cut
+(`gameSlices.js` in the frontend): `shared` (the clock, the settings, finished or not), `side0` /
+`side1` (one side's scores, cards, CP, army state) and `roster0` / `roster1` (that side's army
+list, sent once and again only when it changes). The blobs are opaque, like a game. A slice is
+the unit of conflict — two phones scoring different sides never collide — and the unit of
+rights: a seat on side N writes `sideN`, `rosterN` and `shared`; the host writes anything
+(swapping who goes first rewrites all five); a member without a seat writes nothing.
+
+**The handshake is one request.** `POST /party/{id}/sync` carries `since` (the last `seq` the
+phone saw) and, when the phone has changes, `slices: { name: { version, data } }` where
+`version` is the one the phone based its edit on. The answer is `204` when nothing was sent and
+nothing moved; otherwise `200 { seq, status, you, written, slices }` — `written` the new version
+of each slice that landed, `slices` every slice someone ELSE changed since `since` (never an echo
+of the phone's own write), `you` the phone's own standing (its seat, whether it is host), which
+is how a seat moved by the host reaches it. Every write is a batch, all or nothing: a stale
+version anywhere in it answers `409 { stale, seq, status, you, slices }` with the current state
+of what moved and of the stale slices, and the phone replaces its copies (the server wins). A
+finished party (the shared slice's `phase` is `finished`) is read-only for everyone — `423` —
+except the host reopening it. A slice outside the member's rights is `403 forbidden_slice`.
+Administrative changes (a seat, a kick, a hand-over) bump `seq` without touching a slice, so
+polling phones get a `200` carrying their fresh `you` instead of a silent `204`.
+
+**Cost.** The gateway charges per request, so the reads behind them are shared: a party's state
+is served from warm-instance memory for three seconds after a read and dropped on any write to
+it — every phone of one party in that window costs one YDB read. A member's `lastSeenAt` is
+written at most every 30 s. Joins are throttled per address (10 a minute — a code is six digits
+and lives ten minutes, so a guesser sees it expire long before the odds mean anything); syncs per
+MEMBER (60 a minute), never per address, because a tournament hall puts every phone behind one
+NAT. **The gateway's `rpm: 600` is the number to watch**: four phones at a three-second tick are
+80 requests a minute for ONE game, so ~7 concurrent parties fill the whole API's budget together
+with logins and backups. Raise it in the gateway spec (`infra/openapi.yaml` is the record, but
+Terraform cannot apply it — edit the live spec with `yc` or the console) BEFORE this feature
+reaches players.
+
+**Lifetime.** Rows in `parties`, `party_members` and `party_state` sit under a YDB TTL (7 days
+past the last write; members past their last touch); `DELETE /party/{id}` ends it at once. A
+member token is stored hashed like a refresh token; the invite token is stored plain like a
+broadcast token — the link is the credential. Kicking a member clears its token immediately (the
+in-memory member cache is dropped with it; another warm instance learns within 15 s).
+
 `/rosters` mirrors `/games` with two deliberate differences. The list endpoint returns metadata
 without blobs, so entering the app's roster screen costs one small request and only the lists
 whose `updatedAt` actually moved are downloaded. And **DELETE tombstones instead of removing**:
@@ -158,7 +218,10 @@ npm run typecheck
 ```
 
 OAuth locally needs an app registration with redirect URI
-`http://localhost:8787/auth/yandex/callback`.
+`http://localhost:8787/auth/yandex/callback`. Without one, `npm run dev:jwt` prints a week-long
+access token signed with the local `.env` key: the frontend's dev mock sends it when forwarding
+`/party` calls to this server (`localStorage['wh11ed-dev-jwt']`), which is how a shared game is
+tried on a stand with no real login.
 
 ## Deploy
 

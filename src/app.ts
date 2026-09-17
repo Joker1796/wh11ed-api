@@ -6,6 +6,7 @@ import { broadcastRoutes } from './routes/broadcast.js'
 import { feedbackRoutes } from './routes/feedback.js'
 import { gameRoutes } from './routes/games.js'
 import { meRoutes } from './routes/me.js'
+import { partyRoutes } from './routes/party.js'
 import { rosterRoutes } from './routes/rosters.js'
 
 // Runtime-agnostic Hono app. Exposed via app.fetch(Request) — the YC adapter and the local
@@ -45,6 +46,10 @@ app.route('/broadcast', broadcastRoutes)
 // Public bug reports (anonymous unless a Bearer rides along) — see routes/feedback.ts.
 app.route('/feedback', feedbackRoutes)
 app.route('/games', gameRoutes)
+// A live game shared by several phones. NOT Bearer-gated as a module: POST /party creates one
+// with an account JWT, POST /party/join is public (the invite is the credential), and the rest
+// speaks with per-party member tokens — see routes/party.ts.
+app.route('/party', partyRoutes)
 app.route('/rosters', rosterRoutes)
 app.route('/me', meRoutes)
 
