@@ -171,7 +171,10 @@ phone saw) and, when the phone has changes, `slices: { name: { version, data } }
 nothing moved; otherwise `200 { seq, status, you, written, slices }` — `written` the new version
 of each slice that landed, `slices` every slice someone ELSE changed since `since` (never an echo
 of the phone's own write), `you` the phone's own standing (its seat, whether it is host), which
-is how a seat moved by the host reaches it. Every write is a batch, all or nothing: a stale
+is how a seat moved by the host reaches it, and `held` the sides OTHER live members sit on —
+what a phone locks on its screen (the host included: the right to write a side is wider than
+the lock, because editing the setup rewrites both sides; freeing the seat is how the host takes
+a side back). Every write is a batch, all or nothing: a stale
 version anywhere in it answers `409 { stale, seq, status, you, slices }` with the current state
 of what moved and of the stale slices, and the phone replaces its copies (the server wins). A
 finished party (the shared slice's `phase` is `finished`) is read-only for everyone — `423` —

@@ -8,6 +8,7 @@ import {
   codeExpiry,
   codeLive,
   createBodySchema,
+  heldSides,
   joinBodySchema,
   memberIdSchema,
   memberTokenSchema,
@@ -77,7 +78,7 @@ const STATE_TTL_MS = 3000
 const MEMBER_TTL_MS = 15_000
 const TOUCH_EVERY_MS = 30_000
 
-type CachedState = { at: number; party: PartyRow; rows: StateRow[] }
+type CachedState = { at: number; party: PartyRow; rows: StateRow[]; members: MemberRow[] }
 const stateCache = new Map<string, CachedState>()
 type CachedMember = { at: number; touched: number; member: MemberRow }
 const memberCache = new Map<string, CachedMember>()
@@ -98,12 +99,14 @@ function dropParty(partyId: string, members: MemberRow[]) {
 async function readState(partyId: string, now: number, fresh = false): Promise<CachedState | null> {
   const hit = stateCache.get(partyId)
   if (!fresh && hit && now - hit.at < STATE_TTL_MS) return hit
-  const [party, rows] = await Promise.all([getParty(partyId), listState(partyId)])
+  // The members ride with the state: every response that says what moved also says which sides
+  // other phones sit on (`held`), and a seat change drops this cache like a write does.
+  const [party, rows, members] = await Promise.all([getParty(partyId), listState(partyId), listMembers(partyId)])
   if (!party) {
     stateCache.delete(partyId)
     return null
   }
-  const entry = { at: now, party, rows }
+  const entry = { at: now, party, rows, members }
   stateCache.set(partyId, entry)
   if (stateCache.size > 5000) stateCache.clear()
   return entry
@@ -346,12 +349,13 @@ partyRoutes.use('/:id/*', requireMember)
 partyRoutes.get('/:id', async (c) => {
   const state = await readState(c.var.member.party_id, Date.now())
   if (!state) return c.json({ error: 'not_found' }, 404)
-  const members = await listMembers(state.party.party_id)
+  const me = c.var.member.member_id
   return c.json({
     seq: state.party.seq,
     status: state.party.status,
     slices: slicesOf(state.rows),
-    members: members.filter((m) => !m.revoked_at).map((m) => memberView(m, c.var.member.member_id)),
+    members: state.members.filter((m) => !m.revoked_at).map((m) => memberView(m, me)),
+    held: heldSides(state.members, me),
     you: youOf(c.var.member),
   })
 })
@@ -443,7 +447,14 @@ partyRoutes.post('/:id/sync', async (c) => {
     if (!before) return c.json({ error: 'not_found' }, 404)
     if (before.party.status === 'finished' && !writeAllowedWhenFinished(rights(me), writes)) {
       return c.json(
-        { error: 'read_only', seq: before.party.seq, status: 'finished', you: youOf(me), slices: slicesOf(before.rows) },
+        {
+          error: 'read_only',
+          seq: before.party.seq,
+          status: 'finished',
+          you: youOf(me),
+          held: heldSides(before.members, me.member_id),
+          slices: slicesOf(before.rows),
+        },
         423,
       )
     }
@@ -465,6 +476,7 @@ partyRoutes.post('/:id/sync', async (c) => {
           seq: state.party.seq,
           status: state.party.status,
           you: youOf(me),
+          held: heldSides(state.members, me.member_id),
           // Everything that moved since the phone last looked, the stale slices included whatever
           // their seq — the phone must replace its copy of those.
           slices: slicesOf(state.rows, (r) => r.seq > since || result.stale.includes(r.slice)),
@@ -482,6 +494,7 @@ partyRoutes.post('/:id/sync', async (c) => {
     seq: state.party.seq,
     status: state.party.status,
     you: youOf(me),
+    held: heldSides(state.members, me.member_id),
     written,
     slices: slicesOf(state.rows, (r) => r.seq > since && !(r.slice in written)),
   })

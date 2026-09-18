@@ -14,6 +14,7 @@ import {
   parseSliceWrites,
   partyExpiry,
   partyIdSchema,
+  heldSides,
   seatHeldBy,
   sideOfSlice,
   SliceTooLargeError,
@@ -142,5 +143,11 @@ describe('seats', () => {
   it('a kicked member holds nothing, and a doubles seat differs by member index', () => {
     assert.equal(seatHeldBy(members, { side: 1, mi: 0 }, 'x'), null)
     assert.equal(seatHeldBy(members, { side: 1, mi: 1 }, 'x'), null)
+  })
+  it('the held sides are the ones OTHER live members sit on, each once', () => {
+    assert.deepEqual(heldSides(members, 'x'), [0, 1])
+    assert.deepEqual(heldSides(members, 'g'), [0]) // its own side is not "held" from itself
+    assert.deepEqual(heldSides(members, 'h'), [1])
+    assert.deepEqual(heldSides([{ member_id: 'k', side: 1, revoked_at: '2026-09-17T10:00:00Z' }], 'x'), [])
   })
 })

@@ -212,3 +212,18 @@ export function seatHeldBy<T extends { member_id: string; side: number | null; m
     ) ?? null
   )
 }
+
+/**
+ * The sides some OTHER live member sits on — what a phone needs to keep its hands off a side
+ * another phone is playing. The rights (`canWriteSlice`) do not change with this: the host may
+ * still write any slice, because editing the setup rewrites both sides at once; the phone's screen
+ * is what locks a held side, and freeing the seat (a kick) is how the host takes it back.
+ */
+export function heldSides<T extends { member_id: string; side: number | null; revoked_at: string | null }>(
+  members: T[],
+  self: string,
+): number[] {
+  const out = new Set<number>()
+  for (const m of members) if (m.member_id !== self && !m.revoked_at && m.side != null) out.add(m.side)
+  return [...out].sort()
+}

@@ -347,6 +347,23 @@ describe('sync', () => {
     // …and, unseated, the guest writes nothing.
     assert.equal((await sync(g.memberToken, { since: 0, slices: { side1: { version: 1, data: {} } } })).status, 403)
   })
+
+  it('the response tells each phone which sides the others hold', async () => {
+    const { p, g, sync } = await table()
+    // The guest sits on side 1: held from the host, not from the guest itself.
+    const host = await sync(p.memberToken, { since: 0 })
+    assert.equal(host.status, 200)
+    assert.deepEqual(((await host.json()) as { held: number[] }).held, [1])
+    const guest = await sync(g.memberToken, { since: 0 })
+    assert.deepEqual(((await guest.json()) as { held: number[] }).held, [0])
+    // The host still writes the guest's side — the setup rewrites both — the screen is what locks it.
+    assert.equal((await sync(p.memberToken, { since: 0, slices: { side1: { version: 1, data: { a: 1 } } } })).status, 200)
+    // The seat freed, the side is nobody's.
+    const guestRow = (await fakeRepo.listMembers(p.partyId))[1]!
+    await app.request(`/party/${p.partyId}/members/${guestRow.member_id}/kick`, json({}, p.memberToken))
+    const after = await sync(p.memberToken, { since: 0 })
+    assert.deepEqual(((await after.json()) as { held: number[] }).held, [])
+  })
 })
 
 describe('administration', () => {
