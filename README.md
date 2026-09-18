@@ -284,7 +284,9 @@ work again, that comment can go.
 
 ## Feedback notifications (optional)
 
-Bug reports always land in the `feedback` table and are read with `npm run feedback:list`. A
+Bug reports always land in the `feedback` table and are read with `npm run feedback:list`
+(`npm run users:count` is the other read-only admin query: accounts in total and per month;
+both need the YDB env `npm run migrate` uses). A
 mail notification on top is opt-in and inert until four env vars exist — `POSTBOX_KEY_ID` and
 `POSTBOX_SECRET` (a Yandex Cloud Postbox API key with the `yc.postbox.send` scope, bound from
 Lockbox) plus `FEEDBACK_MAIL_FROM` (an address verified in Postbox) and `FEEDBACK_MAIL_TO`.
