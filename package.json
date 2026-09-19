@@ -15,6 +15,7 @@
     "migrate": "node --env-file-if-exists=.env --import tsx scripts/migrate.ts",
     "test": "node --experimental-test-module-mocks --import tsx --test test/*.test.ts",
     "feedback:list": "node --env-file-if-exists=.env --import tsx scripts/feedback-list.ts",
+    "feedback:delete": "node --env-file-if-exists=.env --import tsx scripts/feedback-delete.ts",
     "users:count": "node --env-file-if-exists=.env --import tsx scripts/users-count.ts",
     "dev:jwt": "node --env-file-if-exists=.env --import tsx scripts/dev-jwt.ts"
   },

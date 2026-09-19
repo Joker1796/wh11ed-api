@@ -57,7 +57,7 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | DELETE | `/games/{id}/broadcast` | Bearer | disable (the share link dies) |
 | PUT | `/broadcast/live/{gameId}` | Bearer | push the latest client-projected read-only state (≤16 KB; 404 until enabled) |
 | GET | `/broadcast/{token}` | – | **public** read for the OBS overlay: `{ payload, updatedAt }`, `ETag`/`If-None-Match` → 304 |
-| POST | `/feedback` | – | anonymous bug report `{ message, context?, attachment?, website? }` (honeypot `website`; per-IP throttle; read via `npm run feedback:list`) |
+| POST | `/feedback` | – | anonymous bug report `{ message, context?, attachment?, website? }` (honeypot `website`; per-IP throttle; read via `npm run feedback:list`, cleared with `npm run feedback:delete`) |
 | POST | `/party` | Bearer | the host shares the game in progress: `{ gameId, slices, seat, name }` → `{ partyId, memberId, memberToken, seq, versions, you, invite: { token, code, codeExpiresAt } }` |
 | POST | `/party/join` | – | exchange an invite for a member token: `{ code }` or `{ invite }` → `{ partyId, memberId, memberToken, seq, status, slices, members, you }` (per-IP throttle; the code lives 10 minutes) |
 | POST | `/party/{id}/reclaim` | Bearer | the creating account gets a fresh host token (a lost phone); same body as join's answer |
@@ -284,8 +284,9 @@ work again, that comment can go.
 
 ## Feedback notifications (optional)
 
-Bug reports always land in the `feedback` table and are read with `npm run feedback:list`
-(`npm run users:count` is the other read-only admin query: accounts in total and per month;
+Bug reports always land in the `feedback` table and are read with `npm run feedback:list`;
+once dealt with they are removed with `npm run feedback:delete -- <id-prefix> …` — the table is
+an inbox, the verdicts live in the changelog and the hub's journals (`npm run users:count` is the other read-only admin query: accounts in total and per month;
 both need the YDB env `npm run migrate` uses). A
 mail notification on top is opt-in and inert until four env vars exist — `POSTBOX_KEY_ID` and
 `POSTBOX_SECRET` (a Yandex Cloud Postbox API key with the `yc.postbox.send` scope, bound from

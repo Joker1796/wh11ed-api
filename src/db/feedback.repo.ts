@@ -58,3 +58,25 @@ export async function listFeedback(limit: number): Promise<FeedbackRow[]> {
     { $limit: TypedValues.uint64(limit) },
   )
 }
+
+// Remove reports that have been dealt with (fixed, answered in the changelog, or judged not a bug)
+// so the inbox `npm run feedback:list` prints holds only what is still open — the owner's call
+// (2026-09-19) over a "resolved" flag: the verdicts live in the changelog and the hub's journals,
+// the table is an inbox, not an archive. Returns the ids actually removed.
+export async function deleteFeedback(ids: string[]): Promise<string[]> {
+  if (!ids.length) return []
+  const present = await query<{ feedback_id: string }>(
+    `DECLARE $ids AS List<Utf8>;
+     SELECT feedback_id FROM feedback WHERE feedback_id IN $ids;`,
+    { $ids: TypedValues.list(Types.UTF8, ids) },
+  )
+  const found = present.map((r) => r.feedback_id)
+  if (found.length) {
+    await query(
+      `DECLARE $ids AS List<Utf8>;
+       DELETE FROM feedback WHERE feedback_id IN $ids;`,
+      { $ids: TypedValues.list(Types.UTF8, found) },
+    )
+  }
+  return found
+}
