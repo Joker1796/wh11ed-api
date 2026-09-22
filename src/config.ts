@@ -90,6 +90,12 @@ export const config = {
   // cap is lower than games' because a collection of lists is curated, not accumulated.
   maxRosterBytes: 32 * 1024,
   maxRostersPerUser: 200,
+
+  // A player's marks, one row per faction. 64 KB is far above a heavy shelf (a few hundred
+  // datasheets, each a small timestamped cell) and still small enough that a runaway client
+  // cannot fill the table; the scope cap is "every faction plus the pinned list", with room.
+  maxPrefsScopeBytes: 64 * 1024,
+  maxPrefsScopesPerUser: 80,
   // Live-broadcast payload (the client-projected read-only scoreboard, not the full game) and
   // how long an untouched broadcast row lives before YDB's TTL sweeps it.
   maxBroadcastBytes: 16 * 1024,

@@ -72,10 +72,33 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | POST | `/party/{id}/members/{mid}/kick` | host | revoke that member's token now; its seat is free |
 | POST | `/party/{id}/host` | host | hand the host role to `{ memberId }` |
 | DELETE | `/party/{id}` | host | end the party: every row and every token |
+| GET | `/prefs` | Bearer | every scope of the player's own marks at once: `{ scopes: [{ scope, version, updatedAt, data }] }`; `ETag`/`If-None-Match` → 304 |
+| PUT | `/prefs/{scope}` | Bearer | write one scope: `{ version, data }` → `{ ok, scope, version }`; 409 `version_conflict` with `current` attached when the version has been overtaken (`scope` = a faction slug, or `@factions` for the pinned-faction list) |
 | GET | `/rosters?limit=` | Bearer | list metadata **only** — live `{ rosterId, name, faction, updatedAt, points, unitCount }` and tombstones `{ rosterId, deleted: true, deletedAt }` |
 | GET | `/rosters/{id}` | Bearer | full roster blob |
 | PUT | `/rosters/{id}` | Bearer | idempotent upsert (body = roster JSON; `id` must match path; a wizard draft is rejected 422) |
 | DELETE | `/rosters/{id}?at=` | Bearer | tombstone (`at` = deleting client's epoch-ms clock; defaults to the server's) |
+
+### A player's marks (`/prefs`)
+
+Pinned factions, favourite datasheets and the "I own this box" collection — device-local until a
+player signs in, and then theirs rather than their phone's. Opaque JSON like a game or a roster:
+the server never looks inside, because deciding what a mark means (which datasheet id replaced
+which, when a unit left the game) needs the rules data, and only the client ships that.
+
+Two things differ from `/rosters`, and both follow from what these are:
+
+- **One row per scope, not one document.** A mark is a single tap on a crowded screen, and a tap
+  must not rewrite everything a player ever marked. `scope` is the faction slug; the pinned-faction
+  list belongs to no faction and lives under `@factions` (an `@` cannot occur in a slug).
+- **Optimistic concurrency, not last-write-wins.** Marks merge cell by cell on the client, so a
+  blind overwrite would drop whatever another device added between this one's read and its write.
+  A `PUT` carries the `version` it merged from; a stale one comes back `409 version_conflict` with
+  the row that beat it attached, so the retry merges instead of guessing and costs no extra `GET`.
+
+The read is one request per visit and carries an `ETag` over the `(scope, version)` pairs: a visit
+that changed nothing is a `304` with no body. Fetching faction by faction would be the wrong trade
+— the gateway's budget is counted in requests, and a whole shelf is a few kilobytes.
 
 ### The broadcast feed (for custom overlays)
 

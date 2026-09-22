@@ -52,6 +52,27 @@ const STATEMENTS: string[] = [
      PRIMARY KEY (user_id, roster_id)
    );`,
 
+  // A player's own marks: pinned factions, favourite datasheets, the "I own this box" collection.
+  // One row per SCOPE — the faction slug, or `@factions` for the pinned-faction list, which
+  // belongs to no faction — because a mark is one tap on a crowded screen and a tap must not
+  // rewrite everything the player has ever marked.
+  //
+  // `version` is the row's optimistic-concurrency counter, the one number compared server-side
+  // here: marks merge cell by cell on the CLIENT, so a blind overwrite would silently drop what
+  // another device added between this device's read and its write. A PUT carries the version it
+  // merged from and is refused with the current row when it is stale. `updated_at` is the
+  // client's epoch-ms clock (Utf8 like every other value here), for display only — it decides
+  // nothing, unlike a roster's.
+  `CREATE TABLE IF NOT EXISTS user_prefs (
+     user_id Utf8 NOT NULL,
+     scope Utf8 NOT NULL,
+     data Utf8,
+     version Uint32,
+     updated_at Utf8,
+     server_updated_at Utf8,
+     PRIMARY KEY (user_id, scope)
+   );`,
+
   `CREATE TABLE IF NOT EXISTS sessions (
      session_id Utf8 NOT NULL,
      user_id Utf8,

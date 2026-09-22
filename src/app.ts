@@ -7,6 +7,7 @@ import { feedbackRoutes } from './routes/feedback.js'
 import { gameRoutes } from './routes/games.js'
 import { meRoutes } from './routes/me.js'
 import { partyRoutes } from './routes/party.js'
+import { prefsRoutes } from './routes/prefs.js'
 import { rosterRoutes } from './routes/rosters.js'
 
 // Runtime-agnostic Hono app. Exposed via app.fetch(Request) — the YC adapter and the local
@@ -50,6 +51,7 @@ app.route('/games', gameRoutes)
 // with an account JWT, POST /party/join is public (the invite is the credential), and the rest
 // speaks with per-party member tokens — see routes/party.ts.
 app.route('/party', partyRoutes)
+app.route('/prefs', prefsRoutes)
 app.route('/rosters', rosterRoutes)
 app.route('/me', meRoutes)
 
