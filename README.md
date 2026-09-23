@@ -243,6 +243,45 @@ it straight back. A tombstone is outranked by a list saved after it (both timest
 client's epoch-ms clock, so they compare directly), and tombstones older than 180 days are swept
 on the next delete. Caps: 32 KB per roster, 200 rosters per user; tombstones don't count.
 
+## The local stand (docker)
+
+A YDB of your own plus this API against it, so a shared game — the lobby especially — can be
+tried end to end with no cloud, no Yandex OAuth and no production database. `docker-compose.yml`
+is the whole of it.
+
+```bash
+docker compose up -d                          # YDB first; on an arm64 Mac it is EMULATED, give it a minute
+docker compose run --rm api npm run migrate   # create the schema in /local
+docker compose run --rm api npm run dev:jwt   # a token for the host's browser
+docker compose logs -f api
+```
+
+Then the SPA, outside docker, **one port per "phone"**:
+
+```bash
+npm run dev                  # 5173 — the host
+npm run dev -- --port 5174   # the guest
+npm run dev -- --port 5175   # a partner, in doubles
+```
+
+`localStorage` is per ORIGIN and the port is part of an origin, so four ports are four
+independent devices in one browser — each with its own history, its own rosters and its own seat.
+The SPA's default API base is already `http://localhost:8787`, so nothing needs configuring on
+that side; the host's tab needs the dev token in `localStorage['wh11ed-dev-jwt']` (the frontend's
+dev mock signs in a fake account but forwards every `/party` call to this server with it).
+
+Three things to know before blaming the stand:
+
+- **`ydbplatform/local-ydb` is published for amd64 only.** On Apple Silicon docker emulates it:
+  it works, but the first start is minutes rather than seconds and it wants a couple of GB.
+- **A plain `grpc://` endpoint means anonymous auth** (`db/driver.ts`) — that branch exists for
+  this stand. Cloud endpoints are `grpcs://`, so it can never widen anything in production.
+- **Every phone's origin must be in `ALLOWED_ORIGINS`** (the compose file lists 5173–5176). A
+  port missing there is a CORS refusal, and it looks like a broken app rather than a missing line.
+
+The stand keeps nothing: `YDB_USE_IN_MEMORY_PDISKS` means every `docker compose up` starts on an
+empty database, which is what you want when testing a join flow for the fifth time.
+
 ## Local development
 
 ```bash

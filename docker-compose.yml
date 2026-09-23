@@ -1,0 +1,68 @@
+# The local stand: a YDB of your own and this API against it, so a shared game can be tried
+# end to end with no cloud, no Yandex OAuth and no production database.
+#
+# Run it:
+#   docker compose up -d           # YDB first — on Apple Silicon it is emulated, give it a minute
+#   docker compose run --rm api npm run migrate
+#   docker compose logs -f api
+#
+# Then the SPA, OUTSIDE docker, one port per "phone" (localStorage is per origin, and the port
+# is part of it — four ports are four independent devices in one browser):
+#   npm run dev                 # 5173, the host
+#   npm run dev -- --port 5174  # the guest
+#
+# The host needs an account: `docker compose run --rm api npm run dev:jwt` prints a token, put
+# it into localStorage['wh11ed-dev-jwt'] in the host's tab (the dev mock forwards /party with it).
+services:
+  ydb:
+    # Published for amd64 only; on an arm64 Mac docker runs it emulated — slow to start,
+    # hungry for memory, but it works.
+    image: ydbplatform/local-ydb:latest
+    platform: linux/amd64
+    hostname: localhost
+    environment:
+      YDB_USE_IN_MEMORY_PDISKS: "true"      # no volume: the stand starts clean every time
+      YDB_DEFAULT_LOG_LEVEL: WARN
+      GRPC_PORT: "2136"
+      MON_PORT: "8765"
+    ports:
+      - "2136:2136"   # grpc, no TLS — what the anonymous auth branch in db/driver.ts keys off
+      - "8765:8765"   # the viewer UI, http://localhost:8765
+    healthcheck:
+      test: ["CMD-SHELL", "/ydb -e grpc://localhost:2136 -d /local scheme ls >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  api:
+    image: node:22-slim
+    working_dir: /app
+    depends_on:
+      ydb:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      # A NAMED volume, not an anonymous one: `docker compose run` (migrate, dev:jwt) gets a
+      # fresh container each time and would otherwise find no node_modules at all. It also keeps
+      # the container's linux install out of the host tree, which has macOS binaries in it.
+      - api-node-modules:/app/node_modules
+    environment:
+      # Every origin a "phone" can sit on. A port missing here is a CORS refusal, not a bug.
+      ALLOWED_ORIGINS: http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176
+      API_BASE_URL: http://localhost:8787
+      APP_AFTER_LOGIN_URL: http://localhost:5173/tracker/auth-callback
+      JWT_SIGNING_KEY: stand-only-insecure-key-0000000000000000
+      YDB_ENDPOINT: grpc://ydb:2136
+      YDB_DATABASE: /local
+      YDB_ACCESS_TOKEN: ""   # empty + a grpc:// endpoint = anonymous, see db/driver.ts
+      PORT: "8787"
+    ports:
+      - "8787:8787"
+    # Install once into the named volume, then run whatever was asked — `npm run dev` by
+    # default, `npm run migrate` / `npm run dev:jwt` when you pass them to `docker compose run`.
+    entrypoint: ["sh", "-c", "[ -x node_modules/.bin/tsx ] || npm ci --no-audit --no-fund; exec \"$0\" \"$@\""]
+    command: ["npm", "run", "dev"]
+
+volumes:
+  api-node-modules:

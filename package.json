@@ -17,7 +17,11 @@
     "feedback:list": "node --env-file-if-exists=.env --import tsx scripts/feedback-list.ts",
     "feedback:delete": "node --env-file-if-exists=.env --import tsx scripts/feedback-delete.ts",
     "users:count": "node --env-file-if-exists=.env --import tsx scripts/users-count.ts",
-    "dev:jwt": "node --env-file-if-exists=.env --import tsx scripts/dev-jwt.ts"
+    "dev:jwt": "node --env-file-if-exists=.env --import tsx scripts/dev-jwt.ts",
+    "stand": "docker compose up -d",
+    "stand:migrate": "docker compose run --rm api npm run migrate",
+    "stand:jwt": "docker compose run --rm api npm run dev:jwt",
+    "stand:down": "docker compose down"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.12.5",
