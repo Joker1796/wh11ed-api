@@ -57,6 +57,9 @@ services:
       YDB_DATABASE: /local
       YDB_ACCESS_TOKEN: ""   # empty + a grpc:// endpoint = anonymous, see db/driver.ts
       PORT: "8787"
+      # The stand hands the test sign-in its token (GET /dev/jwt) so nobody has to paste one
+      # into localStorage. Never set outside this file — see app.ts.
+      DEV_JWT: "1"
     ports:
       - "8787:8787"
     # Install once into the named volume, then run whatever was asked — `npm run dev` by

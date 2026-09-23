@@ -252,7 +252,6 @@ is the whole of it.
 ```bash
 docker compose up -d                          # YDB first; on an arm64 Mac it is EMULATED, give it a minute
 docker compose run --rm api npm run migrate   # create the schema in /local
-docker compose run --rm api npm run dev:jwt   # a token for the host's browser
 docker compose logs -f api
 ```
 
@@ -267,8 +266,15 @@ npm run dev -- --port 5175   # a partner, in doubles
 `localStorage` is per ORIGIN and the port is part of an origin, so four ports are four
 independent devices in one browser — each with its own history, its own rosters and its own seat.
 The SPA's default API base is already `http://localhost:8787`, so nothing needs configuring on
-that side; the host's tab needs the dev token in `localStorage['wh11ed-dev-jwt']` (the frontend's
-dev mock signs in a fake account but forwards every `/party` call to this server with it).
+that side, and **the host signs in from the ⚙ menu — "test sign-in"**. The frontend's dev mock
+fakes the account but a shared game needs a real server, so that entry also fetches this stand's
+token (`GET /dev/jwt`, the same week-long token `npm run dev:jwt` prints) and keeps it where the
+`/party` forwarder looks. Signing out again drops it.
+
+**`/dev/jwt` exists only here.** The route is registered only when `DEV_JWT=1` is in the
+environment — the compose file sets it, nothing in production does — so it is not a guard that
+can be misconfigured, it is a route that is not there. `test/dev-jwt.test.ts` is the gate for
+that.
 
 Three things to know before blaming the stand:
 
