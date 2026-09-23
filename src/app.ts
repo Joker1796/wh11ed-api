@@ -40,6 +40,23 @@ app.use('*', (c, next) => {
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
 
+// THE STAND'S ONE CONVENIENCE, and it exists only when asked for: with DEV_JWT=1 in the
+// environment (docker-compose.yml sets it; nothing in production does) this hands out the same
+// week-long token `npm run dev:jwt` prints, so the frontend's test sign-in can fetch it instead
+// of a human pasting it into localStorage. The route is not REGISTERED without the flag — not
+// guarded inside, not 403'd: it is simply not there, so a misconfiguration cannot expose it.
+// The token is meaningless against production anyway (a different signing key), but a route
+// that mints tokens has no business existing there at all.
+if (process.env.DEV_JWT === '1') {
+  app.get('/dev/jwt', async (c) => {
+    const { sign } = await import('hono/jwt')
+    const { config } = await import('./config.js')
+    const now = Math.floor(Date.now() / 1000)
+    const token = await sign({ sub: 'dev-host', iat: now, exp: now + 7 * 86_400 }, config.jwtSigningKey, 'HS256')
+    return c.json({ token })
+  })
+}
+
 app.route('/auth', authRoutes)
 // NOT Bearer-gated as a module: /broadcast/:token is the public read the OBS overlay polls
 // (the unguessable token is the credential); the live push inside carries its own requireAuth.

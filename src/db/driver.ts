@@ -4,7 +4,7 @@
 // bundle is built) but throws `does not provide an export named 'Driver'` under Node's own ESM
 // resolution, which is what `npm run migrate` and `npm run dev` use. Off the default export it
 // works under both. Drop this the day upstream fixes its ESM build.
-import ydb, { TokenAuthService, Ydb, type IAuthService, type Driver } from 'ydb-sdk'
+import ydb, { AnonymousAuthService, TokenAuthService, Ydb, type IAuthService, type Driver } from 'ydb-sdk'
 
 const { Driver: DriverClass } = ydb
 import { toSnakeCaseKeys } from './rows.js'
@@ -20,6 +20,12 @@ function makeAuthService(): IAuthService {
   // function's attached service account through the metadata endpoint.
   if (config.ydb.accessToken) {
     return new TokenAuthService(config.ydb.accessToken)
+  }
+  // A plain-text endpoint is a YDB on this machine (the docker stand, `docker compose up` —
+  // see README), which authenticates nobody. Cloud endpoints are always grpcs://, so this can
+  // never widen anything in production: there the token is empty and metadata auth answers.
+  if (config.ydb.endpoint.startsWith('grpc://')) {
+    return new AnonymousAuthService()
   }
   return new MetadataTokenAuthService()
 }

@@ -205,6 +205,17 @@ except the host reopening it. A slice outside the member's rights is `403 forbid
 Administrative changes (a seat, a kick, a hand-over) bump `seq` without touching a slice, so
 polling phones get a `200` carrying their fresh `you` instead of a silent `204`.
 
+**Setting the game up together.** A party may be created from a game the players are still
+SETTING UP (`phase: 'setup'` in the shared slice) — the server does not care, the blobs are
+opaque and only `finished` means anything to it. The whole lobby protocol (who fills in which
+side, whether it is confirmed, a request to reopen it) lives inside the slices, so it needs
+nothing here. One thing does: **`POST /party/{id}/reseat`** (host only) swaps the two sides
+across every live seat in ONE statement — `side 0 ↔ 1`, the member index inside a doubles team
+untouched — and answers `{ seq, you, held }`. The client puts the first-turn player at index 0
+when the game starts, so the five slices are rewritten with the sides exchanged and the seats
+have to travel with them; done with the seat endpoint it would take three calls and could stop
+half way, leaving a guest with no seat and a `403` on everything it writes.
+
 **Cost.** The gateway charges per request, so the reads behind them are shared: a party's state
 is served from warm-instance memory for three seconds after a read and dropped on any write to
 it — every phone of one party in that window costs one YDB read. A member's `lastSeenAt` is
@@ -231,6 +242,51 @@ it — otherwise a second device still holding the list would see an id the clou
 it straight back. A tombstone is outranked by a list saved after it (both timestamps are the
 client's epoch-ms clock, so they compare directly), and tombstones older than 180 days are swept
 on the next delete. Caps: 32 KB per roster, 200 rosters per user; tombstones don't count.
+
+## The local stand (docker)
+
+A YDB of your own plus this API against it, so a shared game — the lobby especially — can be
+tried end to end with no cloud, no Yandex OAuth and no production database. `docker-compose.yml`
+is the whole of it.
+
+```bash
+docker compose up -d                          # YDB first; on an arm64 Mac it is EMULATED, give it a minute
+docker compose run --rm api npm run migrate   # create the schema in /local
+docker compose logs -f api
+```
+
+Then the SPA, outside docker, **one port per "phone"**:
+
+```bash
+npm run dev                  # 5173 — the host
+npm run dev -- --port 5174   # the guest
+npm run dev -- --port 5175   # a partner, in doubles
+```
+
+`localStorage` is per ORIGIN and the port is part of an origin, so four ports are four
+independent devices in one browser — each with its own history, its own rosters and its own seat.
+The SPA's default API base is already `http://localhost:8787`, so nothing needs configuring on
+that side, and **the host signs in from the ⚙ menu — "test sign-in"**. The frontend's dev mock
+fakes the account but a shared game needs a real server, so that entry also fetches this stand's
+token (`GET /dev/jwt`, the same week-long token `npm run dev:jwt` prints) and keeps it where the
+`/party` forwarder looks. Signing out again drops it.
+
+**`/dev/jwt` exists only here.** The route is registered only when `DEV_JWT=1` is in the
+environment — the compose file sets it, nothing in production does — so it is not a guard that
+can be misconfigured, it is a route that is not there. `test/dev-jwt.test.ts` is the gate for
+that.
+
+Three things to know before blaming the stand:
+
+- **`ydbplatform/local-ydb` is published for amd64 only.** On Apple Silicon docker emulates it:
+  it works, but the first start is minutes rather than seconds and it wants a couple of GB.
+- **A plain `grpc://` endpoint means anonymous auth** (`db/driver.ts`) — that branch exists for
+  this stand. Cloud endpoints are `grpcs://`, so it can never widen anything in production.
+- **Every phone's origin must be in `ALLOWED_ORIGINS`** (the compose file lists 5173–5176). A
+  port missing there is a CORS refusal, and it looks like a broken app rather than a missing line.
+
+The stand keeps nothing: `YDB_USE_IN_MEMORY_PDISKS` means every `docker compose up` starts on an
+empty database, which is what you want when testing a join flow for the fifth time.
 
 ## Local development
 
