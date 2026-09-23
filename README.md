@@ -205,6 +205,17 @@ except the host reopening it. A slice outside the member's rights is `403 forbid
 Administrative changes (a seat, a kick, a hand-over) bump `seq` without touching a slice, so
 polling phones get a `200` carrying their fresh `you` instead of a silent `204`.
 
+**Setting the game up together.** A party may be created from a game the players are still
+SETTING UP (`phase: 'setup'` in the shared slice) — the server does not care, the blobs are
+opaque and only `finished` means anything to it. The whole lobby protocol (who fills in which
+side, whether it is confirmed, a request to reopen it) lives inside the slices, so it needs
+nothing here. One thing does: **`POST /party/{id}/reseat`** (host only) swaps the two sides
+across every live seat in ONE statement — `side 0 ↔ 1`, the member index inside a doubles team
+untouched — and answers `{ seq, you, held }`. The client puts the first-turn player at index 0
+when the game starts, so the five slices are rewritten with the sides exchanged and the seats
+have to travel with them; done with the seat endpoint it would take three calls and could stop
+half way, leaving a guest with no seat and a `403` on everything it writes.
+
 **Cost.** The gateway charges per request, so the reads behind them are shared: a party's state
 is served from warm-instance memory for three seconds after a read and dropped on any write to
 it — every phone of one party in that window costs one YDB read. A member's `lastSeenAt` is

@@ -148,6 +148,11 @@ const fakeRepo = {
     const m = members.get(input.partyId)!.find((x) => x.member_id === input.memberId)!
     Object.assign(m, { side: input.side, mi: input.mi, name: input.name })
   },
+  async swapMemberSides(partyId: string) {
+    for (const m of members.get(partyId) ?? []) {
+      if (m.side != null && !m.revoked_at) m.side = m.side === 0 ? 1 : 0
+    }
+  },
   async setMemberRole(partyId: string, memberId: string, role: 'host' | 'player') {
     members.get(partyId)!.find((x) => x.member_id === memberId)!.role = role
   },
@@ -261,6 +266,40 @@ describe('seats', () => {
     assert.deepEqual(((await ok.json()) as { you: unknown }).you, { memberId: (await fakeRepo.listMembers(p.partyId))[1]!.member_id, side: 1, mi: null, host: false })
     const again = await app.request(`/party/${p.partyId}/seat`, json({ side: 1, mi: null, name: 'Me' }, g.memberToken))
     assert.equal(again.status, 200)
+  })
+})
+
+describe('reseat', () => {
+  it('swaps the sides across every seat, host included, and refuses a guest', async () => {
+    const p = await createParty()
+    const g = (await join({ code: p.invite.code })).body as { memberToken: string }
+    await app.request(`/party/${p.partyId}/seat`, json({ side: 1, mi: null, name: 'Guest' }, g.memberToken))
+
+    const denied = await app.request(`/party/${p.partyId}/reseat`, json({}, g.memberToken))
+    assert.equal(denied.status, 403)
+
+    const res = await app.request(`/party/${p.partyId}/reseat`, json({}, p.memberToken))
+    assert.equal(res.status, 200)
+    const body = (await res.json()) as { seq: number; you: { side: number; host: boolean } }
+    assert.equal(body.you.side, 1) // the host was on 0
+    assert.equal(body.you.host, true)
+    const seats = (await fakeRepo.listMembers(p.partyId)).map((m) => m.side)
+    assert.deepEqual(seats, [1, 0])
+
+    // The guest learns of its new seat from the next tick's `you`, with no write of its own.
+    const tick = await app.request(`/party/${p.partyId}/sync`, json({ since: 0 }, g.memberToken))
+    assert.equal(tick.status, 200)
+    assert.equal(((await tick.json()) as { you: { side: number } }).you.side, 0)
+  })
+
+  it('keeps the member index inside a doubles team', async () => {
+    const p = await createParty()
+    const g = (await join({ code: p.invite.code })).body as { memberToken: string }
+    await app.request(`/party/${p.partyId}/seat`, json({ side: 1, mi: 1, name: 'Partner' }, g.memberToken))
+    await app.request(`/party/${p.partyId}/reseat`, json({}, p.memberToken))
+    const partner = (await fakeRepo.listMembers(p.partyId))[1]!
+    assert.equal(partner.side, 0)
+    assert.equal(partner.mi, 1)
   })
 })
 

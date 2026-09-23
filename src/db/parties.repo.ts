@@ -413,6 +413,21 @@ export async function updateMemberSeat(input: {
   )
 }
 
+/**
+ * Swap the two sides across every live seat, in one statement: side 0 becomes 1 and 1 becomes 0,
+ * the member index inside a doubles team stays put. This is what keeps seats attached to their
+ * ARMY when the host settles who goes first — the client reorders the players so the first-turn
+ * side is index 0, and a seat that did not move with them would name the other army.
+ */
+export async function swapMemberSides(partyId: string): Promise<void> {
+  await query(
+    `DECLARE $party_id AS Utf8;
+     UPDATE party_members SET side = 1 - side
+     WHERE party_id = $party_id AND side IS NOT NULL AND revoked_at IS NULL;`,
+    { $party_id: TypedValues.utf8(partyId) },
+  )
+}
+
 export async function setMemberRole(partyId: string, memberId: string, role: 'host' | 'player'): Promise<void> {
   await query(
     `DECLARE $party_id AS Utf8;

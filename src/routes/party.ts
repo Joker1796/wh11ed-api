@@ -45,6 +45,7 @@ import {
   setInvite,
   setMemberRole,
   touchMember,
+  swapMemberSides,
   updateMemberSeat,
   writeSlices,
   type MemberRow,
@@ -571,6 +572,28 @@ partyRoutes.post('/:id/members/:mid/seat', requireHost, async (c) => {
   const seq = await bumpSeq(c.var.member.party_id, new Date(now).toISOString(), partyExpiry(now))
   dropState(c.var.member.party_id)
   return c.json({ seq })
+})
+
+// Swap the two sides across every seat — the host settling who goes first.
+//
+// The client puts the first-turn player at index 0, so the game's five slices are rewritten with
+// the two sides exchanged. The seats have to travel with them in ONE step: done as three calls to
+// the seat endpoint above (free a seat, move, move back) it can stop half way and leave a guest
+// with no seat and a 403 on everything it writes. The slices themselves ride the host's next
+// sync, which it sends immediately after this answers.
+partyRoutes.post('/:id/reseat', requireHost, async (c) => {
+  const partyId = c.var.member.party_id
+  const now = Date.now()
+  await swapMemberSides(partyId)
+  const members = await listMembers(partyId)
+  dropParty(partyId, members)
+  const seq = await bumpSeq(partyId, new Date(now).toISOString(), partyExpiry(now))
+  const me = members.find((m) => m.member_id === c.var.member.member_id) ?? null
+  return c.json({
+    seq,
+    you: me ? { memberId: me.member_id, side: me.side, mi: me.mi, host: me.role === 'host' } : null,
+    held: heldSides(members, c.var.member.member_id),
+  })
 })
 
 // Kick: the token dies now (its cache entry goes with it), the seat is free.
