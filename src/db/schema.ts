@@ -182,6 +182,20 @@ const STATEMENTS: string[] = [
      attachment Utf8,
      PRIMARY KEY (feedback_id)
    );`,
+
+  // Release notes older than the few the frontend ships with (routes/changelog.ts). Keyed by
+  // `rank`, the version as a number (domain/changelog.ts versionRank), so a page is a range read
+  // in version order — 2.10.0 after 2.9.9, which the string would get wrong. The notes are the
+  // frontend's own EN/RU lists as JSON, never queried inside. Written only by
+  // `npm run changelog:publish`; no TTL — an archive is kept.
+  `CREATE TABLE IF NOT EXISTS changelog (
+     rank Uint32 NOT NULL,
+     version Utf8,
+     date Utf8,
+     en Utf8,
+     ru Utf8,
+     PRIMARY KEY (rank)
+   );`,
 ]
 
 export async function migrate(): Promise<void> {

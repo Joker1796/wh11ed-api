@@ -80,8 +80,9 @@ All queries go through `query<T>(yql, params)` — parameterized YQL only (param
 leading `$`, values are `ydb-sdk` `TypedValues`); never string-interpolate user input.
 
 **Schema (`src/db/schema.ts`):** `users`, `games` (PK `(user_id, game_id)`),
-`rosters` (PK `(user_id, roster_id)`), `sessions`, `broadcasts`, `feedback`, and the three party
-tables (`parties`, `party_members`, `party_state`). JSON blobs and ISO timestamps are stored as `Utf8` (never queried server-side); only
+`rosters` (PK `(user_id, roster_id)`), `sessions`, `broadcasts`, `feedback`, `changelog` (the
+frontend's older release notes, PK `rank` = the version as a number — README "The release-notes
+archive"), and the three party tables (`parties`, `party_members`, `party_state`). JSON blobs and ISO timestamps are stored as `Utf8` (never queried server-side); only
 `sessions.expires_at` is a real `Timestamp` because a YDB **TTL** column auto-purges expired
 sessions. Migrations are a list of idempotent `CREATE TABLE IF NOT EXISTS` / `ALTER` statements.
 

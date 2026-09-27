@@ -57,6 +57,7 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | DELETE | `/games/{id}/broadcast` | Bearer | disable (the share link dies) |
 | PUT | `/broadcast/live/{gameId}` | Bearer | push the latest client-projected read-only state (≤16 KB; 404 until enabled) |
 | GET | `/broadcast/{token}` | – | **public** read for the OBS overlay: `{ payload, updatedAt }`, `ETag`/`If-None-Match` → 304 |
+| GET | `/changelog?before=&limit=` | – | **public** release-notes archive, newest first: `{ entries: [{ version, date, en, ru }], more }` — entries strictly older than `before` (a version; omitted = from the newest archived), `limit` 1–20 (default 10); `Cache-Control: public, max-age=3600`. See "The release-notes archive" |
 | POST | `/feedback` | – | anonymous bug report `{ message, context?, attachment?, website? }` (honeypot `website`; per-IP throttle; read via `npm run feedback:list`, cleared with `npm run feedback:delete`) |
 | POST | `/party` | Bearer | the host shares the game in progress: `{ gameId, slices, seat, name }` → `{ partyId, memberId, memberToken, seq, versions, you, invite: { token, code, codeExpiresAt } }` |
 | POST | `/party/join` | – | exchange an invite for a member token: `{ code }` or `{ invite }` → `{ partyId, memberId, memberToken, seq, status, slices, members, you }` (per-IP throttle; the code lives 10 minutes) |
@@ -78,6 +79,24 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | GET | `/rosters/{id}` | Bearer | full roster blob |
 | PUT | `/rosters/{id}` | Bearer | idempotent upsert (body = roster JSON; `id` must match path; a wizard draft is rejected 422) |
 | DELETE | `/rosters/{id}?at=` | Bearer | tombstone (`at` = deleting client's epoch-ms clock; defaults to the server's) |
+
+### The release-notes archive (`/changelog`)
+
+The frontend's "What's new" page ships only its last few releases (`wh11ed/src/data/changelog.js`);
+everything older lives here and is read page by page, only by a reader who asks for it — notes almost
+nobody reads stay out of the app's first load and out of the installed app's offline download
+(owner's call, 2026-09-27).
+
+- **An entry is the frontend's own shape**: `{ version, date: 'YYYY-MM-DD', en, ru }`, where `en`/`ru`
+  are parallel lists of bullet strings and `{ h }` headings. Validated for shape, EN/RU parity and
+  size (`src/domain/changelog.ts`); the wording is the frontend's.
+- **Ordered by version as a number** (`rank`, the table's key): 2.10.0 comes after 2.9.9.
+- **Written only by `npm run changelog:publish -- <entries.json>`** (same YDB env as `migrate`), never
+  over HTTP. It validates every entry before writing any, upserts (idempotent by version), reads
+  the rows back and compares them byte for byte; exit 0 means they are there. The frontend's deploy
+  calls it with the entries it is about to drop from its file, and drops them only on exit 0.
+- A page never goes stale: new entries are always OLDER than what the page before them already
+  returned (they move in from the top of the frontend's file), so a cached page stays right.
 
 ### A player's marks (`/prefs`)
 
