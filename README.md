@@ -1,8 +1,22 @@
 # wh11ed-api
 
-Backend microservice for **cloud backup of the wh11ed Game Tracker history and army lists**.
-Users log in with Yandex (OAuth, no passwords) and back up / list / view / restore / delete their
-finished games and rosters. `localStorage` stays the primary store; the cloud is a backup.
+The backend of **[WH Rules](https://wh-rules.ru)** (frontend:
+[Joker1796/wh11ed](https://github.com/Joker1796/wh11ed)). The app works without it — rules, roster
+builder, tracker and offline mode are all client-side — so this service is optional
+infrastructure: if it is down, nobody loses a game, they lose sync.
+
+What it does:
+
+- **Accounts and cloud backup** — sign-in with Yandex (OAuth, no passwords); finished games, army
+  lists and a player's marks (favourite units, pinned factions, model collection) follow the
+  account across devices. `localStorage` stays the primary store; the cloud is a copy.
+- **A shared live game** (`/party`) — several phones play one game in progress, each scoring its own
+  side, with a lobby for setting the game up together. The only place the server holds live state.
+- **Broadcast** — a public read-only feed of one live game for an OBS overlay.
+- **The release-notes archive** — older "What's new" entries the frontend no longer ships.
+- **Bug reports** — the app's anonymous report form, with an optional mail notification.
+
+Stack:
 
 - **Runtime:** Yandex Cloud Functions (`nodejs22`) behind Yandex API Gateway
 - **DB:** YDB serverless (scales to zero — effectively free at this scale)
@@ -14,8 +28,8 @@ finished games and rosters. `localStorage` stays the primary store; the cloud is
 
 ```
 SPA (wh-rules.ru)  ──fetch──▶  API Gateway (api.wh-rules.ru)  ──▶  Cloud Function  ──▶  YDB
-   Bearer access token (in memory) on /games,/me                (Hono + adapter)      Lockbox
-   credentials:'include' on /auth/refresh
+   Bearer access token (in memory) on /games, /rosters, /prefs, /me     (Hono + adapter)   Lockbox
+   member token on /party/{id}/*  ·  credentials:'include' on /auth/refresh
 ```
 
 All HTTP logic lives behind `app.fetch(Request): Promise<Response>` (`src/app.ts`). The only
@@ -70,6 +84,7 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | GET | `/party/{id}/invite` | host | the current invite (`code` null once it expired) |
 | POST | `/party/{id}/invite` | host | a fresh code; `{ link: true }` also replaces the link token (the old link dies) |
 | POST | `/party/{id}/members/{mid}/seat` | host | move another member (`side: null` unseats) |
+| POST | `/party/{id}/reseat` | host | swap the two sides across every live seat in one statement → `{ seq, you, held }` (see "Setting the game up together") |
 | POST | `/party/{id}/members/{mid}/kick` | host | revoke that member's token now; its seat is free |
 | POST | `/party/{id}/host` | host | hand the host role to `{ memberId }` |
 | DELETE | `/party/{id}` | host | end the party: every row and every token |
@@ -170,7 +185,7 @@ exposes `ETag`, so a custom HTML/CSS overlay can poll it every second or two and
 ```
 
 **Polling etiquette.** Send `If-None-Match` and poll no faster than once a second: the gateway's
-budget is 600 requests a minute for the WHOLE API (logins and sync included), and the app's own
+budget is 1800 requests a minute for the WHOLE API (logins, sync and shared games included), and the app's own
 overlay spends 12 of them per viewer at its 5-second cadence. The read protects itself — a
 warm-instance micro-cache (2 s) means every viewer of one game shares a single database read,
 responses carry `Cache-Control: public, max-age=2`, and a single IP is capped at 60 reads a
@@ -185,13 +200,11 @@ was revoked, regenerated or left untouched for a week answers `404`; a token of 
 `400`. Nothing here can be written through: the push endpoint is Bearer-only and lives
 elsewhere.
 
-**Broadcast** is the live-game overlay feed (OBS on a second device polls it every ~2 s while
-the phone tracks the match). The payload is opaque like a game blob — the client projects the
-read-only scoreboard itself, so nothing private can reach the public endpoint. The token is 128
-random bits (an unlisted-link model: the URL is the credential); rows live in the `broadcasts`
-table under a YDB TTL (`broadcastTtlDays`, 7 days past the last touch). The public GET is served
-under the normal CORS policy — our own overlay page is same-site; third-party overlay hosts are
-deliberately not supported (v1).
+**How it is stored.** The payload is opaque like a game blob — the phone projects the read-only
+scoreboard itself, so nothing private can reach the public endpoint. The token is 128 random bits
+(an unlisted-link model: the URL is the credential); rows live in the `broadcasts` table under a
+YDB TTL (`broadcastTtlDays`, 7 days past the last touch). Only the public `GET` has open CORS
+(`src/app.ts`); the push endpoint `/broadcast/live/*` keeps the allow-list like everything else.
 
 ### A shared live game (`/party`)
 
@@ -241,17 +254,20 @@ it — every phone of one party in that window costs one YDB read. A member's `l
 written at most every 30 s. Joins are throttled per address (10 a minute — a code is six digits
 and lives ten minutes, so a guesser sees it expire long before the odds mean anything); syncs per
 MEMBER (60 a minute), never per address, because a tournament hall puts every phone behind one
-NAT. **The gateway's `rpm: 600` is the number to watch**: four phones at a three-second tick are
-80 requests a minute for ONE game, so ~7 concurrent parties fill the whole API's budget together
-with logins and backups. Raise it in the gateway spec (`infra/openapi.yaml` is the record, but
-Terraform cannot apply it — edit the live spec with `yc` or the console) BEFORE this feature
-reaches players.
+NAT. **The gateway's rate limit is the number to watch**: four phones at a three-second tick are
+80 requests a minute for ONE game. The live gateway runs at **1800 rpm** (raised by hand on
+2026-09-18, before shared games reached players) — about twenty concurrent games together with
+logins and backups. `infra/openapi.yaml` still records the old 600: Terraform cannot apply it, so
+the live spec is changed with `yc serverless api-gateway update` or the console, and the file has
+to be brought along by hand.
 
 **Lifetime.** Rows in `parties`, `party_members` and `party_state` sit under a YDB TTL (7 days
 past the last write; members past their last touch); `DELETE /party/{id}` ends it at once. A
 member token is stored hashed like a refresh token; the invite token is stored plain like a
 broadcast token — the link is the credential. Kicking a member clears its token immediately (the
 in-memory member cache is dropped with it; another warm instance learns within 15 s).
+
+### Army lists (`/rosters`)
 
 `/rosters` mirrors `/games` with two deliberate differences. The list endpoint returns metadata
 without blobs, so entering the app's roster screen costs one small request and only the lists
@@ -269,8 +285,10 @@ tried end to end with no cloud, no Yandex OAuth and no production database. `doc
 is the whole of it.
 
 ```bash
-docker compose up -d                          # YDB first; on an arm64 Mac it is EMULATED, give it a minute
-docker compose run --rm api npm run migrate   # create the schema in /local
+npm run stand           # docker compose up -d — YDB first; on an arm64 Mac it is EMULATED, give it a minute
+npm run stand:migrate   # create the schema in /local
+npm run stand:jwt       # print a week-long dev token, if you need one by hand
+npm run stand:down      # stop it
 docker compose logs -f api
 ```
 
@@ -306,6 +324,10 @@ Three things to know before blaming the stand:
 
 The stand keeps nothing: `YDB_USE_IN_MEMORY_PDISKS` means every `docker compose up` starts on an
 empty database, which is what you want when testing a join flow for the fifth time.
+
+**When the stand dies, it dies quietly.** The emulated YDB can run out of memory and stop answering
+with no error worth reading; the app then looks broken. A plain restart does not cure it — run
+`npm run stand:down`, `npm run stand` and `npm run stand:migrate` again.
 
 ## Local development
 
@@ -403,11 +425,13 @@ in `deploy.env`.
 ## Security notes
 - TLS only; CORS locked to `ALLOWED_ORIGINS` with credentials (no wildcard).
 - Refresh tokens are opaque, stored only as SHA-256 hashes, single-use (rotated on every refresh), and
-  auto-expire via a YDB TTL column. `/games*` is Bearer-only → not CSRF-able.
-- All inputs validated with zod; per-game (64 KB) and per-user (500 games) caps.
-- Secrets only in Lockbox; least-privilege service accounts; gateway rate limit.
-
-## Frontend integration (separate task)
-The SPA still needs: a login button (`/auth/{provider}/login`), an `/auth/refresh` call on load to
-obtain the access token, and sync calls in `useTracker.js` (PUT finished games, list/restore).
-The API contract above is the integration surface.
+  auto-expire via a YDB TTL column. `/games*`, `/rosters*` and `/prefs*` are Bearer-only → not
+  CSRF-able.
+- A disallowed `Origin` gets the canonical origin back rather than no header — with no header the
+  Yandex platform layer would fill in `*` itself (`corsOrigin` in `src/config.ts`). The one
+  deliberate exception is the public broadcast read.
+- All inputs validated with zod, every blob capped (`src/config.ts`): a game 64 KB and 500 per user,
+  a roster 32 KB and 200 per user, a marks scope 64 KB, a party slice 32 KB, a broadcast 16 KB.
+- Member and refresh tokens stored only as hashes; invite and broadcast tokens are the link itself.
+- Secrets only in Lockbox; least-privilege service accounts; a gateway rate limit plus per-IP and
+  per-member throttles where a route is public or polled.
