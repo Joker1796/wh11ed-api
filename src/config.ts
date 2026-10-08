@@ -199,6 +199,20 @@ export function siteForHost(host: string | undefined): Site {
   return fallback
 }
 
+// The origin a login asked to return to, when it is one of ours (https, allow-listed).
+export function returnOrigin(raw: string | undefined): string | null {
+  if (!raw || !raw.startsWith('https://')) return null
+  return config.allowedOrigins.includes(raw) ? raw : null
+}
+
+// The post-login page on the site the login started from: the same path, that origin.
+export function afterLogin(site: Site, back: string | undefined): string {
+  const origin = returnOrigin(back)
+  if (!origin) return site.appAfterLoginUrl
+  const after = new URL(site.appAfterLoginUrl)
+  return `${origin}${after.pathname}${after.search}`
+}
+
 export function redirectUri(name: ProviderName, site?: Site): string {
   return `${(site?.apiBaseUrl ?? config.apiBaseUrl)}/auth/${name}/callback`
 }

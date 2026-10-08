@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { getSignedCookie, setSignedCookie, setCookie, getCookie, deleteCookie } from 'hono/cookie'
-import { config, isProviderName, siteForHost, type ProviderName, type Site } from '../config.js'
+import { afterLogin, config, isProviderName, returnOrigin, siteForHost, type ProviderName, type Site } from '../config.js'
 import {
   buildAuthUrl,
   createPkceState,
@@ -42,10 +42,13 @@ authRoutes.get('/:provider/login', async (c) => {
 
   const pkce = createPkceState()
   const site = siteOf(c)
+  // A site other than this API's own may ask to be sent back to (the tracker's beta on its
+  // subdomain, 2026-10-08) — only an allow-listed https origin, never an arbitrary URL.
+  const back = returnOrigin(c.req.query('return'))
   await setSignedCookie(
     c,
     STATE_COOKIE,
-    JSON.stringify({ ...pkce, provider }),
+    JSON.stringify({ ...pkce, provider, ...(back ? { back } : {}) }),
     config.jwtSigningKey,
     { httpOnly: true, secure: isSecure(), sameSite: 'Lax', path: '/auth', maxAge: 600 },
   )
@@ -68,7 +71,7 @@ authRoutes.get('/:provider/callback', async (c) => {
   deleteCookie(c, STATE_COOKIE, { path: '/auth' })
   if (!rawCookie) return c.json({ error: 'missing_state_cookie' }, 400)
 
-  let saved: { state: string; codeVerifier: string; provider: ProviderName }
+  let saved: { state: string; codeVerifier: string; provider: ProviderName; back?: string }
   try {
     saved = JSON.parse(rawCookie)
   } catch {
@@ -101,7 +104,7 @@ authRoutes.get('/:provider/callback', async (c) => {
       domain: site.cookieDomain || undefined,
       maxAge: config.refreshTokenTtl,
     })
-    return c.redirect(site.appAfterLoginUrl)
+    return c.redirect(afterLogin(site, saved.back))
   } catch (e) {
     if (e instanceof OAuthError) return c.json({ error: 'oauth_failed' }, 502)
     throw e
