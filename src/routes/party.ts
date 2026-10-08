@@ -19,11 +19,13 @@ import {
   parseSliceWrites,
   partyExpiry,
   partyIdSchema,
+  reclaimBodySchema,
   seatBodySchema,
   seatHeldBy,
   SliceTooLargeError,
   statusAfterWrite,
   syncBodySchema,
+  trackerGenOf,
   UnknownSliceError,
   writeAllowedWhenFinished,
   type MemberRights,
@@ -205,6 +207,13 @@ async function readJson(c: { req: { json: () => Promise<unknown> } }): Promise<u
   }
 }
 
+// The party's tracker generation when it is not the phone's, else 0 (domain/party.ts).
+function otherGen(rows: StateRow[], phoneGen: number | undefined): number {
+  const shared = slicesOf(rows, (r) => r.slice === 'shared').shared?.data
+  const gen = trackerGenOf(shared)
+  return gen === (phoneGen ?? 1) ? 0 : gen
+}
+
 // ── Create (the host, with an account) ─────────────────────────────────────────────────────────
 
 partyRoutes.post('/', requireAuth, async (c) => {
@@ -289,6 +298,11 @@ partyRoutes.post('/join', async (c) => {
     party = await getPartyByInvite(parsed.data.invite)
   }
   if (!party) return c.json({ error: 'not_found' }, 404)
+  // A phone of the other tracker is turned away before it takes a place: `gen` tells it which
+  // tracker the host plays, so it can send the player there.
+  const rows = await listState(party.party_id)
+  const gen = otherGen(rows, parsed.data.gen)
+  if (gen) return c.json({ error: 'tracker_version', gen }, 409)
 
   const memberId = newId()
   const memberToken = newMemberToken()
@@ -299,7 +313,7 @@ partyRoutes.post('/join', async (c) => {
     nowIso,
     partyExpiry(now),
   )
-  const [rows, members] = await Promise.all([listState(party.party_id), listMembers(party.party_id)])
+  const members = await listMembers(party.party_id)
   return c.json(
     {
       partyId: party.party_id,
@@ -325,10 +339,14 @@ partyRoutes.post('/:id/reclaim', requireAuth, async (c) => {
   const members = await listMembers(party.party_id)
   const host = members.find((m) => m.role === 'host')
   if (!host) return c.json({ error: 'not_found' }, 404)
+  // The host's other phone may run the other tracker too. No body is a phone from before the beta.
+  const body = reclaimBodySchema.safeParse((await readJson(c)) ?? {})
+  const rows = await listState(party.party_id)
+  const gen = otherGen(rows, body.success ? body.data.gen : undefined)
+  if (gen) return c.json({ error: 'tracker_version', gen }, 409)
   const memberToken = newMemberToken()
   await rotateMemberToken(party.party_id, host.member_id, hashToken(memberToken))
   dropMember(party.party_id, host.member_id)
-  const rows = await listState(party.party_id)
   return c.json({
     partyId: party.party_id,
     memberId: host.member_id,

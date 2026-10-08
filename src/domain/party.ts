@@ -134,10 +134,27 @@ export const createBodySchema = z.object({
   name: z.string().max(120).default(''),
 })
 
+// ── Tracker generations ────────────────────────────────────────────────────────────────────────
+// Two trackers live side by side for a while: the site's, and the beta of the new one on its own
+// subdomain (owner, 2026-10-08). Their games are not played across the two — one phone counting
+// Command points by itself and the other by hand would disagree at the table. A game carries the
+// generation that started its party in the shared slice (`trackerGen`), a phone says its own when
+// it joins (`gen`); either missing is 1, which is every phone and game from before the beta.
+export const trackerGenSchema = z.number().int().min(1).max(99)
+
+export function trackerGenOf(shared: unknown): number {
+  const gen = (shared as { trackerGen?: unknown } | null)?.trackerGen
+  return trackerGenSchema.safeParse(gen).success ? (gen as number) : 1
+}
+
+const genField = { gen: trackerGenSchema.optional() }
+
 export const joinBodySchema = z.union([
-  z.object({ code: joinCodeSchema }),
-  z.object({ invite: inviteTokenSchema }),
+  z.object({ code: joinCodeSchema, ...genField }),
+  z.object({ invite: inviteTokenSchema, ...genField }),
 ])
+
+export const reclaimBodySchema = z.object(genField)
 
 export const seatBodySchema = seatSchema.extend({ name: z.string().max(120).default('') })
 
