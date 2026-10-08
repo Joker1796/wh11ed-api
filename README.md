@@ -57,7 +57,7 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/health` | – | liveness |
-| GET | `/auth/{provider}/login` | – | start OAuth (`provider` = `yandex`) |
+| GET | `/auth/{provider}/login` | – | start OAuth (`provider` = `yandex`); optional `?return=<origin>` — an https origin from `ALLOWED_ORIGINS` (the tracker beta) the callback sends the player back to |
 | GET | `/auth/{provider}/callback` | – | OAuth redirect target |
 | POST | `/auth/refresh` | refresh cookie | `{ accessToken, expiresIn }`, rotates cookie |
 | POST | `/auth/logout` | refresh cookie | revoke session |
