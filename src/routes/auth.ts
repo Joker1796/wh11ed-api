@@ -60,26 +60,36 @@ authRoutes.get('/:provider/callback', async (c) => {
   if (!isProviderName(provider)) return c.json({ error: 'unknown_provider' }, 404)
 
   const site = siteOf(c)
+  const rawCookie = await getSignedCookie(c, config.jwtSigningKey, STATE_COOKIE)
+  deleteCookie(c, STATE_COOKIE, { path: '/auth' })
+  let saved: { state: string; codeVerifier: string; provider: ProviderName; back?: string } | null = null
+  if (rawCookie) {
+    try {
+      saved = JSON.parse(rawCookie)
+    } catch {
+      saved = null
+    }
+  }
+  // A login that fails goes back to the site it started from, with its reason (`?error=`), and
+  // leaves a line in the log. Until 2026-10-09 our own failures answered with bare JSON — a
+  // player whose login came back in another browser (the Yandex app on Android) saw a page of
+  // code — and Yandex's refusals (`unauthorized_client` for child and organisation accounts)
+  // reached the site but nobody, us included, ever learned of them.
+  const fail = (reason: string) => {
+    const ua = (c.req.header('user-agent') || '').slice(0, 160)
+    console.warn(`[auth] ${provider} login failed: ${reason} | ua: ${ua}`)
+    return c.redirect(`${afterLogin(site, saved?.back)}?error=${encodeURIComponent(reason)}`)
+  }
+
   const err = c.req.query('error')
-  if (err) return c.redirect(`${site.appAfterLoginUrl}?error=${encodeURIComponent(err)}`)
+  if (err) return fail(err)
 
   const code = c.req.query('code')
   const state = c.req.query('state')
-  if (!code || !state) return c.json({ error: 'missing_code_or_state' }, 400)
-
-  const rawCookie = await getSignedCookie(c, config.jwtSigningKey, STATE_COOKIE)
-  deleteCookie(c, STATE_COOKIE, { path: '/auth' })
-  if (!rawCookie) return c.json({ error: 'missing_state_cookie' }, 400)
-
-  let saved: { state: string; codeVerifier: string; provider: ProviderName; back?: string }
-  try {
-    saved = JSON.parse(rawCookie)
-  } catch {
-    return c.json({ error: 'bad_state_cookie' }, 400)
-  }
-  if (saved.provider !== provider || saved.state !== state) {
-    return c.json({ error: 'state_mismatch' }, 400)
-  }
+  if (!code || !state) return fail('missing_code_or_state')
+  if (!rawCookie) return fail('missing_state_cookie')
+  if (!saved) return fail('bad_state_cookie')
+  if (saved.provider !== provider || saved.state !== state) return fail('state_mismatch')
 
   try {
     const providerToken = await exchangeCode(provider, code, saved.codeVerifier, site)
@@ -106,7 +116,7 @@ authRoutes.get('/:provider/callback', async (c) => {
     })
     return c.redirect(afterLogin(site, saved.back))
   } catch (e) {
-    if (e instanceof OAuthError) return c.json({ error: 'oauth_failed' }, 502)
+    if (e instanceof OAuthError) return fail('oauth_failed')
     throw e
   }
 })

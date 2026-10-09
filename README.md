@@ -58,7 +58,7 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 |---|---|---|---|
 | GET | `/health` | – | liveness |
 | GET | `/auth/{provider}/login` | – | start OAuth (`provider` = `yandex`); optional `?return=<origin>` — an https origin from `ALLOWED_ORIGINS` (the tracker beta) the callback sends the player back to |
-| GET | `/auth/{provider}/callback` | – | OAuth redirect target |
+| GET | `/auth/{provider}/callback` | – | OAuth redirect target. A failed login redirects to the site's after-login page with `?error=<reason>` — the provider's own code (`unauthorized_client`, `access_denied`…) or ours (`missing_state_cookie`, `bad_state_cookie`, `state_mismatch`, `missing_code_or_state`, `oauth_failed`) — and logs `[auth] <provider> login failed: <reason>` with the user agent |
 | POST | `/auth/refresh` | refresh cookie | `{ accessToken, expiresIn }`, rotates cookie |
 | POST | `/auth/logout` | refresh cookie | revoke session |
 | GET | `/me` | Bearer | `{ id, email, displayName }` |
