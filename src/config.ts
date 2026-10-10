@@ -26,6 +26,8 @@ export interface OAuthProviderConfig {
   tokenUrl: string
   userInfoUrl: string
   scope: string
+  // Extra query parameters of the authorize URL, the provider's own switches.
+  authParams?: Record<string, string>
 }
 
 // Env-derived values are lazy getters so merely importing `config` never throws — only
@@ -150,6 +152,10 @@ export function oauthProvider(name: ProviderName): OAuthProviderConfig {
         tokenUrl: 'https://oauth.yandex.ru/token',
         userInfoUrl: 'https://login.yandex.ru/info?format=json',
         scope: 'login:email login:info',
+        // Always ask which account (owner, 2026-10-10): a player with several Yandex accounts was
+        // signed in at once with the one the browser held, no choice offered (Misha). Yandex shows
+        // its consent page with the account switcher every time; one more tap for everybody else.
+        authParams: { force_confirm: 'yes' },
       }
   }
 }

@@ -39,6 +39,7 @@ export function buildAuthUrl(provider: ProviderName, pkce: PkceState, site?: Sit
     state: pkce.state,
     code_challenge: challenge,
     code_challenge_method: 'S256',
+    ...p.authParams,
   })
   return `${p.authUrl}?${params.toString()}`
 }
