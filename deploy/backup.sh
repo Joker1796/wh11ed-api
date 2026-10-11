@@ -15,6 +15,23 @@
 # Keeps 14 dailies and the first of each month for 12 months.
 set -euo pipefail
 cd /opt/wh-rules
+
+# A failure is mailed to the owner (the same relay bug reports use, through the API container) with
+# the run's last lines. Without this a broken backup is silent: the uptime checks only see HTTP.
+LOG=/opt/wh-rules/backup.last.log
+exec > >(tee "$LOG") 2>&1
+on_error() {
+  local line=$1
+  echo "backup FAILED at line $line"
+  sleep 1
+  { echo "Ночной бэкап базы WH Rules не удался ($(date '+%Y-%m-%d %H:%M %Z'), строка $line скрипта)."; echo
+    echo "Последние строки:"; tail -n 25 "$LOG"; echo
+    echo "Лог: journalctl -t wh-backup · повтор вручную: /opt/wh-rules/backup.sh"; } \
+    | docker compose -f docker-compose.prod.yml exec -T api node --import tsx scripts/notify.ts \
+        "wh-rules: ночной бэкап НЕ удался" || true
+}
+trap 'on_error $LINENO' ERR
+
 set -a; . ./backup.env; set +a
 
 stamp=$(date -u +%Y-%m-%dT%H%MZ)

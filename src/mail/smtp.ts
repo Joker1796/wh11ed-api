@@ -88,3 +88,20 @@ export async function sendFeedbackMail(m: FeedbackMail): Promise<void> {
     console.error('[feedback] mail failed:', e instanceof Error ? e.message : e)
   }
 }
+
+/**
+ * A message to the owner from the server itself (scripts/notify.ts — a failed nightly backup, say).
+ * Unlike a bug report it is the whole point of the run, so a failure here is reported to the
+ * caller: true = handed to the relay, false = not sent (no mail configured, or the relay refused).
+ */
+export async function sendAdminMail(subject: string, text: string): Promise<boolean> {
+  const tx = getTransport()
+  if (!tx) return false
+  try {
+    await tx.sendMail({ from: config.mail.from, to: config.mail.to, subject, text })
+    return true
+  } catch (e) {
+    console.error('[mail] admin mail failed:', e instanceof Error ? e.message : e)
+    return false
+  }
+}
