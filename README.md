@@ -357,6 +357,11 @@ A mail notification on top is opt-in and inert until `SMTP_HOST`, `FEEDBACK_MAIL
 Missing any of the three, `sendFeedbackMail` returns immediately and nothing else changes. On the
 stand the mail goes to Mailpit, http://localhost:8025.
 
+Production sends through a send-only app password of a Mail.ru mailbox. **The server's provider
+(Selectel) blocks outgoing ports 25, 465 and 587** — a send there times out after 4 s with no other
+sign; Mail.ru also listens on 2525 (STARTTLS), which is open. Check a port from the server with
+`timeout 8 bash -c '</dev/tcp/smtp.mail.ru/2525'`.
+
 The send is deliberately defensive: a 4-second timeout, at most 20 mails an hour per process, and
 every error swallowed after a log line. The report is saved before the mail is attempted, so a
 broken SMTP path can lose a notification but never a report.
