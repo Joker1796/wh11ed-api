@@ -116,7 +116,10 @@ authRoutes.get('/:provider/callback', async (c) => {
     })
     return c.redirect(afterLogin(site, saved.back))
   } catch (e) {
-    if (e instanceof OAuthError) return fail('oauth_failed')
+    if (e instanceof OAuthError) {
+      console.warn(`[auth] ${e.message}`)
+      return fail('oauth_failed')
+    }
     throw e
   }
 })
