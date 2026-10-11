@@ -34,7 +34,7 @@ needs no configuration.
 |---|---|
 | The site | http://localhost:5173 (`/ru` for Russian) |
 | The API | http://localhost:8787/health |
-| Bug-report mail (Mailpit) | http://localhost:8025 |
+| Mail (Mailpit): bug reports, confirm-email and reset-password letters | http://localhost:8025 |
 | The sign-in page | opens by itself from "Войти" in the ⚙ menu |
 | The database | `npm run stand:psql`, or any client on `localhost:5433`, user/password/db `wh` |
 
@@ -50,6 +50,20 @@ needs no configuration.
 | **Вера** | nothing — sign in with lists already on the device and watch them go up to the cloud |
 
 Or type any name: a new, empty account, the same one every time you type that name.
+
+**By email and password** — "Войти" → the email form. Every seeded login has the password
+`stand-password` (`stand/email-logins.json`):
+
+| Email | The account |
+|---|---|
+| `alice@stand.local` | Алиса's Yandex account — the same lists and games, a second way in |
+| `gosha@stand.local` | Гоша: email only, no Yandex; one list |
+| `dina@stand.local` | Дина: the address was never confirmed — the reminder and "send again" |
+
+Registering a new address, confirming it and "Forgot your password?" all mail a link: open
+Mailpit at http://localhost:8025 and follow it. To add an email sign-in to a Yandex account, sign in
+as Боб or Вера — they have none. A re-seed puts `stand-password` back on the seeded logins;
+`stand:reset` also drops the accounts registered by hand.
 
 ## Several "phones" in one browser
 

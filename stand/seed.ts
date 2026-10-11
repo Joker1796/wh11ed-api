@@ -14,6 +14,8 @@ import { upsertRoster, tombstoneRoster } from '../src/db/rosters.repo.js'
 import { upsertGame } from '../src/db/games.repo.js'
 import { writePrefsScope, listPrefs } from '../src/db/prefs.repo.js'
 import { insertFeedback } from '../src/db/feedback.repo.js'
+import { getLoginByEmail, createPasswordAccount, addPasswordLogin, setPassword, markVerified } from '../src/db/password.repo.js'
+import { hashPassword } from '../src/auth/password.js'
 import { upsertChangelog } from '../src/db/changelog.repo.js'
 import { upsertBroadcast, updateBroadcastPayload } from '../src/db/broadcasts.repo.js'
 import { parseRoster, extractMetadata as rosterMeta } from '../src/domain/roster.js'
@@ -31,6 +33,10 @@ const read = <T>(name: string): T => JSON.parse(readFileSync(new URL(name, impor
 const players = read<{ id: string; name: string; email: string }[]>('./players.json')
 const rosters = read<Record<string, unknown>[]>('./fixtures/rosters.json')
 const games = read<Record<string, unknown>[]>('./fixtures/games.json')
+const emailLogins = read<{ email: string; player?: string; name?: string; verified: boolean }[]>('./email-logins.json')
+
+// Every email login on the stand signs in with this password (DEVELOPMENT.md "Signing in").
+const STAND_PASSWORD = 'stand-password'
 
 const uid = (playerId: string) => `yandex:${playerId}`
 const [alice, bob] = players.map((p) => uid(p.id))
@@ -65,6 +71,33 @@ const havocs = rosters.find((r) => r.id === 'stand-havocs')!
 for (const raw of games) {
   const { game, json } = parseGame(raw)
   await upsertGame({ userId: alice!, meta: gameMeta(game), json, nowIso: now })
+}
+
+// Email + password logins (stand/email-logins.json): Alice's second way into her Yandex account,
+// an email-only account with one list, and one whose address was never confirmed. Each seed puts
+// the stand password back, so a password changed while testing does not lock the next person out.
+const hash = await hashPassword(STAND_PASSWORD)
+for (const l of emailLogins) {
+  let userId = (await getLoginByEmail(l.email))?.user_id
+  if (!userId && l.player) {
+    userId = uid(l.player)
+    const added = await addPasswordLogin({ userId, email: l.email, hash, nowIso: now })
+    if (!added.ok) {
+      // Added by hand while testing, under another address: left alone — `stand:reset` brings back the fixture.
+      console.log(`${l.email}: the account already signs in by email with another address — skipped.`)
+      continue
+    }
+  } else if (!userId) {
+    const made = await createPasswordAccount({ email: l.email, hash, displayName: l.name ?? l.email, nowIso: now })
+    if (!made.ok) throw new Error(`Seed: ${l.email} is taken`)
+    userId = made.userId
+  }
+  await setPassword(userId, hash, now)
+  if (l.verified) await markVerified(userId, now)
+  if (l.email.startsWith('gosha@')) {
+    const { roster, json } = parseRoster(rosters.find((r) => r.id === 'stand-leaders')!)
+    await upsertRoster({ userId, meta: rosterMeta(roster), json, nowIso: now })
+  }
 }
 
 // Alice's pinned factions — the `@factions` row, the shape useUserPrefs.js writes. Written once:
@@ -110,7 +143,7 @@ await updateBroadcastPayload({
 
 const count = async (t: string) => (await db()`SELECT COUNT(*)::int AS n FROM ${db()(t)}`)[0]!.n
 console.log(
-  `Seeded: ${await count('users')} users, ${await count('rosters')} rosters, ${await count('games')} games, ` +
+  `Seeded: ${await count('users')} users (${await count('password_logins')} with email sign-in), ${await count('rosters')} rosters, ${await count('games')} games, ` +
     `${await count('feedback')} reports, ${await count('changelog')} archived notes, 1 broadcast.`,
 )
 await closeDb()

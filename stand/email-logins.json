@@ -1,0 +1,20 @@
+[
+  {
+    "email": "alice@stand.local",
+    "player": "1001",
+    "verified": true,
+    "about": "Алиса из списка Яндекса: тот же аккаунт входит и по почте."
+  },
+  {
+    "email": "gosha@stand.local",
+    "name": "Гоша",
+    "verified": true,
+    "about": "Только почта, без Яндекса. Один ростер в облаке."
+  },
+  {
+    "email": "dina@stand.local",
+    "name": "Дина",
+    "verified": false,
+    "about": "Почта не подтверждена: проверить напоминание и повторное письмо."
+  }
+]
