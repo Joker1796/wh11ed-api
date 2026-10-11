@@ -22,9 +22,9 @@
     "users:count": "node --env-file-if-exists=.env --import tsx scripts/users-count.ts",
     "dev:jwt": "node --env-file-if-exists=.env --import tsx scripts/dev-jwt.ts",
     "stand": "docker compose up -d --wait --remove-orphans",
-    "stand:seed": "docker compose exec api npm run seed",
-    "stand:reset": "docker compose exec api npm run seed -- --reset",
-    "stand:test": "docker compose exec api npm run test:db",
+    "stand:seed": "docker compose exec api node --import tsx stand/seed.ts",
+    "stand:reset": "docker compose exec api node --import tsx stand/seed.ts --reset",
+    "stand:test": "docker compose exec api node --import tsx --test --test-concurrency=1 test/db/*.test.ts",
     "stand:psql": "docker compose exec postgres psql -U wh -d wh",
     "stand:logs": "docker compose logs -f api",
     "stand:down": "docker compose down"

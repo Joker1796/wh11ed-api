@@ -93,8 +93,10 @@ services:
     ports:
       - "8787:8787"
     # Install once into the named volume, apply new migrations, then the watching dev server.
-    entrypoint: ["sh", "-c", "[ -x node_modules/.bin/tsx ] && [ package-lock.json -ot node_modules/.package-lock.json ] || npm ci --no-audit --no-fund; npm run migrate && exec \"$0\" \"$@\""]
-    command: ["npm", "run", "dev"]
+    # NOT `npm run dev`: that reads a developer's own .env (`--env-file-if-exists`), which the
+    # stand must not see, and under --watch Node crashes when that file is absent.
+    entrypoint: ["sh", "-c", "[ -x node_modules/.bin/tsx ] && [ package-lock.json -ot node_modules/.package-lock.json ] || npm ci --no-audit --no-fund; node --import tsx scripts/migrate.ts && exec \"$0\" \"$@\""]
+    command: ["node", "--import", "tsx", "--watch", "src/server.ts"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 3s
