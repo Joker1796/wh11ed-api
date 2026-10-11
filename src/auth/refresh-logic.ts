@@ -1,8 +1,7 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 
-// Pure refresh-token helpers, kept free of any DB / ydb-sdk imports so they're unit-testable
-// without a YDB harness (the test runtime can't import the CJS ydb-sdk). sessions.ts composes
-// these with the actual queries.
+// Pure refresh-token helpers, kept free of any database import so they're unit-testable without
+// one. sessions.ts composes these with the actual queries.
 
 export function hashToken(raw: string): string {
   return createHash('sha256').update(raw).digest('hex')

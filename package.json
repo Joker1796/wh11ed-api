@@ -3,39 +3,42 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Backend microservice for cloud backup of wh11ed Game Tracker history. Yandex Cloud Functions + YDB serverless, OAuth (Yandex), finished-game backup.",
+  "description": "Backend for WH Rules (wh-rules.ru): sign-in, cloud backup of games, army lists and marks, live shared games. Node + Hono + PostgreSQL.",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && node scripts/bundle.mjs",
+    "start": "node --import tsx src/server.ts",
     "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts",
     "migrate": "node --env-file-if-exists=.env --import tsx scripts/migrate.ts",
     "test": "node --experimental-test-module-mocks --import tsx --test test/*.test.ts",
+    "test:db": "node --env-file-if-exists=.env --import tsx --test --test-concurrency=1 test/db/*.test.ts",
+    "seed": "node --env-file-if-exists=.env --import tsx stand/seed.ts",
     "feedback:list": "node --env-file-if-exists=.env --import tsx scripts/feedback-list.ts",
-    "changelog:publish": "node --env-file-if-exists=.env --import tsx scripts/changelog-publish.ts",
     "feedback:delete": "node --env-file-if-exists=.env --import tsx scripts/feedback-delete.ts",
+    "changelog:publish": "node --env-file-if-exists=.env --import tsx scripts/changelog-publish.ts",
     "users:count": "node --env-file-if-exists=.env --import tsx scripts/users-count.ts",
     "dev:jwt": "node --env-file-if-exists=.env --import tsx scripts/dev-jwt.ts",
-    "stand": "docker compose up -d",
-    "stand:migrate": "docker compose run --rm api npm run migrate",
-    "stand:jwt": "docker compose run --rm api npm run dev:jwt",
+    "stand": "docker compose up -d --wait --remove-orphans",
+    "stand:seed": "docker compose exec api node --import tsx stand/seed.ts",
+    "stand:reset": "docker compose exec api node --import tsx stand/seed.ts --reset",
+    "stand:test": "docker compose exec api node --import tsx --test --test-concurrency=1 test/db/*.test.ts",
+    "stand:psql": "docker compose exec postgres psql -U wh -d wh",
+    "stand:logs": "docker compose logs -f api",
     "stand:down": "docker compose down"
   },
   "dependencies": {
-    "@grpc/grpc-js": "^1.12.5",
+    "@hono/node-server": "^1.13.7",
     "hono": "^4.6.14",
     "nodemailer": "^10.0.9",
-    "ydb-sdk": "^5.10.0",
+    "postgres": "^3.4.5",
+    "tsx": "^4.19.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@hono/node-server": "^1.13.7",
     "@types/node": "^22.10.2",
-    "esbuild": "^0.25.12",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

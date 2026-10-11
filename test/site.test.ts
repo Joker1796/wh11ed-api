@@ -1,6 +1,6 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { siteForHost, redirectUri } from '../src/config.js'
+import { afterLogin, returnOrigin, siteForHost, redirectUri } from '../src/config.js'
 
 // config reads env lazily per access (see config.ts), so plain assignment is enough.
 beforeEach(() => {
@@ -53,4 +53,26 @@ test('redirectUri: follows the site, defaults to the env base', () => {
     redirectUri('yandex', siteForHost('api.wh-rules.ru')),
     'https://api.wh-rules.ru/auth/yandex/callback',
   )
+})
+
+test('afterLogin: back to an allow-listed site that asked, else the default', () => {
+  process.env.ALLOWED_ORIGINS = 'https://wh-rules.ru,https://beta.wh-rules.ru'
+  const site = siteForHost('api.wh-rules.ru')
+  assert.equal(afterLogin(site, 'https://beta.wh-rules.ru'), 'https://beta.wh-rules.ru/tracker/auth-callback')
+  assert.equal(afterLogin(site, undefined), 'https://wh-rules.ru/tracker/auth-callback')
+  // Never an arbitrary place: not listed, not https, or a path smuggled in.
+  assert.equal(returnOrigin('https://evil.example'), null)
+  assert.equal(returnOrigin('http://beta.wh-rules.ru'), null)
+  assert.equal(returnOrigin('https://beta.wh-rules.ru/x'), null)
+  assert.equal(afterLogin(site, 'https://evil.example'), 'https://wh-rules.ru/tracker/auth-callback')
+})
+
+test('returnOrigin: a local http API takes its own http phones back, a production one never', () => {
+  process.env.ALLOWED_ORIGINS = 'http://localhost:5173,http://localhost:5174'
+  process.env.API_BASE_URL = 'http://localhost:8787'
+  assert.equal(returnOrigin('http://localhost:5174'), 'http://localhost:5174')
+  assert.equal(returnOrigin('http://localhost:9999'), null, 'still only an allow-listed one')
+  process.env.API_BASE_URL = 'https://api.wh-rules.ru'
+  process.env.ALLOWED_ORIGINS = 'https://wh-rules.ru,http://localhost:5174'
+  assert.equal(returnOrigin('http://localhost:5174'), null, 'an https API refuses plain http even when listed')
 })

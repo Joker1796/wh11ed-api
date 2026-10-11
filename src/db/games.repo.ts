@@ -1,5 +1,4 @@
-import { TypedValues } from 'ydb-sdk'
-import { query } from './driver.js'
+import { db } from './driver.js'
 import type { GameMetadata } from '../domain/game.js'
 
 interface GameMetaRow {
@@ -15,28 +14,20 @@ interface GameBlobRow {
 }
 
 interface CountRow {
-  cnt: number | bigint
+  cnt: string | number
 }
 
 export async function countGames(userId: string): Promise<number> {
-  const rows = await query<CountRow>(
-    `DECLARE $user_id AS Utf8;
-     SELECT COUNT(*) AS cnt FROM games WHERE user_id = $user_id;`,
-    { $user_id: TypedValues.utf8(userId) },
-  )
+  const rows = await db()<CountRow[]>`SELECT COUNT(*) AS cnt FROM games WHERE user_id = ${userId}`
   return Number(rows[0]?.cnt ?? 0)
 }
 
 export async function listGames(userId: string, limit: number): Promise<GameMetadata[]> {
-  const rows = await query<GameMetaRow>(
-    `DECLARE $user_id AS Utf8;
-     DECLARE $limit AS Uint64;
-     SELECT game_id, created_at, finished_at, result_summary, players
-     FROM games WHERE user_id = $user_id
-     ORDER BY finished_at DESC, game_id DESC
-     LIMIT $limit;`,
-    { $user_id: TypedValues.utf8(userId), $limit: TypedValues.uint64(limit) },
-  )
+  const rows = await db()<GameMetaRow[]>`
+    SELECT game_id, created_at, finished_at, result_summary, players
+    FROM games WHERE user_id = ${userId}
+    ORDER BY finished_at DESC, game_id DESC
+    LIMIT ${limit}`
   return rows.map((r) => ({
     gameId: r.game_id,
     createdAt: r.created_at || null,
@@ -47,12 +38,8 @@ export async function listGames(userId: string, limit: number): Promise<GameMeta
 }
 
 export async function getGameBlob(userId: string, gameId: string): Promise<unknown | null> {
-  const rows = await query<GameBlobRow>(
-    `DECLARE $user_id AS Utf8;
-     DECLARE $game_id AS Utf8;
-     SELECT blob FROM games WHERE user_id = $user_id AND game_id = $game_id;`,
-    { $user_id: TypedValues.utf8(userId), $game_id: TypedValues.utf8(gameId) },
-  )
+  const rows = await db()<GameBlobRow[]>`
+    SELECT blob FROM games WHERE user_id = ${userId} AND game_id = ${gameId}`
   const blob = rows[0]?.blob
   if (!blob) return null
   try {
@@ -71,39 +58,17 @@ export async function upsertGame(input: {
   nowIso: string
 }): Promise<void> {
   const { meta } = input
-  await query(
-    `DECLARE $user_id AS Utf8;
-     DECLARE $game_id AS Utf8;
-     DECLARE $blob AS Utf8;
-     DECLARE $created_at AS Utf8;
-     DECLARE $finished_at AS Utf8;
-     DECLARE $result_summary AS Utf8;
-     DECLARE $players AS Utf8;
-     DECLARE $updated_at AS Utf8;
-     UPSERT INTO games
-       (user_id, game_id, blob, created_at, finished_at, result_summary, players, updated_at)
-     VALUES
-       ($user_id, $game_id, $blob, $created_at, $finished_at, $result_summary, $players, $updated_at);`,
-    {
-      $user_id: TypedValues.utf8(input.userId),
-      $game_id: TypedValues.utf8(meta.gameId),
-      $blob: TypedValues.utf8(input.json),
-      $created_at: TypedValues.utf8(meta.createdAt ?? ''),
-      $finished_at: TypedValues.utf8(meta.finishedAt ?? ''),
-      $result_summary: TypedValues.utf8(meta.resultSummary ?? ''),
-      $players: TypedValues.utf8(JSON.stringify(meta.players)),
-      $updated_at: TypedValues.utf8(input.nowIso),
-    },
-  )
+  await db()`
+    INSERT INTO games (user_id, game_id, blob, created_at, finished_at, result_summary, players, updated_at)
+    VALUES (${input.userId}, ${meta.gameId}, ${input.json}, ${meta.createdAt ?? ''}, ${meta.finishedAt ?? ''},
+            ${meta.resultSummary ?? ''}, ${JSON.stringify(meta.players)}, ${input.nowIso})
+    ON CONFLICT (user_id, game_id) DO UPDATE SET
+      blob = EXCLUDED.blob, created_at = EXCLUDED.created_at, finished_at = EXCLUDED.finished_at,
+      result_summary = EXCLUDED.result_summary, players = EXCLUDED.players, updated_at = EXCLUDED.updated_at`
 }
 
 export async function deleteGame(userId: string, gameId: string): Promise<void> {
-  await query(
-    `DECLARE $user_id AS Utf8;
-     DECLARE $game_id AS Utf8;
-     DELETE FROM games WHERE user_id = $user_id AND game_id = $game_id;`,
-    { $user_id: TypedValues.utf8(userId), $game_id: TypedValues.utf8(gameId) },
-  )
+  await db()`DELETE FROM games WHERE user_id = ${userId} AND game_id = ${gameId}`
 }
 
 function safeParseArray(s: string | null): { name: string; factionSlug: string | null }[] {

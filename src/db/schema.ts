@@ -1,205 +1,29 @@
-import { executeScheme } from './driver.js'
+import { readdir, readFile } from 'node:fs/promises'
+import { db } from './driver.js'
 
-// Idempotent schema. Run once after provisioning (`tsx scripts/migrate.ts`, or the deploy
-// script). YDB DDL is executed via scheme queries, one statement at a time.
-//
-// JSON payloads and ISO timestamps are stored as Utf8 (we never query inside them server-side,
-// so a plain string column is simplest and avoids type-coercion surprises). Only
-// sessions.expires_at is a real Timestamp because the TTL sweeper needs it.
+// Migrations are plain SQL files in /migrations, applied in name order, each once, each in its own
+// transaction (Postgres runs DDL transactionally, so a file either lands whole or not at all). The
+// `schema_migrations` table remembers which ran. A change to the schema is a NEW file — never an
+// edit to one that has already run somewhere, because nothing would re-apply it there.
+const DIR = new URL('../../migrations/', import.meta.url)
 
-const STATEMENTS: string[] = [
-  `CREATE TABLE IF NOT EXISTS users (
-     user_id Utf8 NOT NULL,
-     email Utf8,
-     display_name Utf8,
-     created_at Utf8,
-     PRIMARY KEY (user_id)
-   );`,
-
-  `CREATE TABLE IF NOT EXISTS games (
-     user_id Utf8 NOT NULL,
-     game_id Utf8 NOT NULL,
-     blob Utf8,
-     created_at Utf8,
-     finished_at Utf8,
-     result_summary Utf8,
-     players Utf8,
-     updated_at Utf8,
-     PRIMARY KEY (user_id, game_id)
-   );`,
-
-  // Army lists. Same blob-plus-envelope shape as `games`; `updated_at` is the CLIENT's epoch-ms
-  // timestamp (kept as Utf8 like every other value here) because last-write-wins compares on it,
-  // while `server_updated_at` is only for diagnostics.
-  //
-  // `deleted_at` makes a delete a TOMBSTONE rather than a disappearance: the row stays, emptied,
-  // and the list endpoint reports it so a second device learns the list is gone instead of
-  // re-uploading its own copy. Empty string = live. It is the client's epoch-ms clock too, so it
-  // is directly comparable with a roster's `updated_at` — that comparison is what lets a list
-  // saved AFTER the delete win and come back. Old tombstones are swept on the next delete
-  // (rosters.repo.ts), so no TTL column is needed.
-  `CREATE TABLE IF NOT EXISTS rosters (
-     user_id Utf8 NOT NULL,
-     roster_id Utf8 NOT NULL,
-     blob Utf8,
-     name Utf8,
-     faction Utf8,
-     updated_at Utf8,
-     points Utf8,
-     unit_count Utf8,
-     deleted_at Utf8,
-     server_updated_at Utf8,
-     PRIMARY KEY (user_id, roster_id)
-   );`,
-
-  // A player's own marks: pinned factions, favourite datasheets, the "I own this box" collection.
-  // One row per SCOPE — the faction slug, or `@factions` for the pinned-faction list, which
-  // belongs to no faction — because a mark is one tap on a crowded screen and a tap must not
-  // rewrite everything the player has ever marked.
-  //
-  // `version` is the row's optimistic-concurrency counter, the one number compared server-side
-  // here: marks merge cell by cell on the CLIENT, so a blind overwrite would silently drop what
-  // another device added between this device's read and its write. A PUT carries the version it
-  // merged from and is refused with the current row when it is stale. `updated_at` is the
-  // client's epoch-ms clock (Utf8 like every other value here), for display only — it decides
-  // nothing, unlike a roster's.
-  `CREATE TABLE IF NOT EXISTS user_prefs (
-     user_id Utf8 NOT NULL,
-     scope Utf8 NOT NULL,
-     data Utf8,
-     version Uint32,
-     updated_at Utf8,
-     server_updated_at Utf8,
-     PRIMARY KEY (user_id, scope)
-   );`,
-
-  `CREATE TABLE IF NOT EXISTS sessions (
-     session_id Utf8 NOT NULL,
-     user_id Utf8,
-     refresh_hash Utf8,
-     created_at Utf8,
-     expires_at Timestamp,
-     PRIMARY KEY (session_id),
-     INDEX idx_sessions_user GLOBAL ON (user_id)
-   );`,
-
-  // TTL: expired sessions are purged automatically by YDB.
-  `ALTER TABLE sessions SET (TTL = Interval("PT0S") ON expires_at);`,
-
-  // Live-game broadcast (the OBS overlay). One row per (user, game): a random public read
-  // token, the client-projected read-only payload, and a real Timestamp for TTL — a stream
-  // nobody has updated for a week is garbage, and sweeping it automatically means a stale
-  // token can never serve a months-old game. PK (user_id, game_id) so enabling twice (or
-  // regenerating) overwrites the row in place — the old token dies with the overwrite; the
-  // global index is what lets the public GET resolve a token without knowing the owner.
-  `CREATE TABLE IF NOT EXISTS broadcasts (
-     user_id Utf8 NOT NULL,
-     game_id Utf8 NOT NULL,
-     token Utf8,
-     payload Utf8,
-     updated_at Utf8,
-     expires_at Timestamp,
-     PRIMARY KEY (user_id, game_id),
-     INDEX idx_broadcasts_token GLOBAL ON (token)
-   );`,
-
-  `ALTER TABLE broadcasts SET (TTL = Interval("PT0S") ON expires_at);`,
-
-  // A live game shared by several phones (routes/party.ts). Three tables, all under TTL, because
-  // a party is a single evening's thing and nothing here outlives the game it carried.
-  //
-  // `parties` — one row per shared game: the host's account (for reclaiming a lost phone), the
-  // invite (a link token, plain like a broadcast token — the link IS the credential — and a
-  // short-lived six-digit code), the global `seq` every write bumps (what a phone polls
-  // "since"), and whether the game is finished. Versions and counters are Uint32 — the one
-  // place this schema compares numbers server-side.
-  `CREATE TABLE IF NOT EXISTS parties (
-     party_id Utf8 NOT NULL,
-     host_user_id Utf8,
-     game_id Utf8,
-     invite_token Utf8,
-     code Utf8,
-     code_expires_at Utf8,
-     seq Uint32,
-     status Utf8,
-     created_at Utf8,
-     updated_at Utf8,
-     expires_at Timestamp,
-     PRIMARY KEY (party_id),
-     INDEX idx_parties_invite GLOBAL ON (invite_token),
-     INDEX idx_parties_code GLOBAL ON (code)
-   );`,
-  `ALTER TABLE parties SET (TTL = Interval("PT0S") ON expires_at);`,
-
-  // One row per phone in a party. The token is stored hashed like a refresh token — it grants
-  // writes. A kicked member keeps its row with `revoked_at` set (the seat is free, the token dead);
-  // the global index is how a Bearer resolves to its row without knowing the party.
-  `CREATE TABLE IF NOT EXISTS party_members (
-     party_id Utf8 NOT NULL,
-     member_id Utf8 NOT NULL,
-     token_hash Utf8,
-     role Utf8,
-     side Int32,
-     mi Int32,
-     name Utf8,
-     created_at Utf8,
-     last_seen_at Utf8,
-     revoked_at Utf8,
-     expires_at Timestamp,
-     PRIMARY KEY (party_id, member_id),
-     INDEX idx_party_members_token GLOBAL ON (token_hash)
-   );`,
-  `ALTER TABLE party_members SET (TTL = Interval("PT0S") ON expires_at);`,
-
-  // The five slices of the game, one row each, created with the party so every write is an
-  // UPDATE of an existing row. `version` is the slice's own optimistic-concurrency counter;
-  // `seq` is the party's global sequence at the slice's last write, which is what "give me what
-  // changed since N" selects on.
-  `CREATE TABLE IF NOT EXISTS party_state (
-     party_id Utf8 NOT NULL,
-     slice Utf8 NOT NULL,
-     version Uint32,
-     seq Uint32,
-     data Utf8,
-     updated_at Utf8,
-     expires_at Timestamp,
-     PRIMARY KEY (party_id, slice)
-   );`,
-  `ALTER TABLE party_state SET (TTL = Interval("PT0S") ON expires_at);`,
-
-  // Player bug reports (POST /feedback — public, anonymous unless a Bearer rode along).
-  // `context` is the client-collected tech block (version/route/UA/recent JS errors) and
-  // `attachment` an optional roster/game snapshot the player explicitly agreed to include —
-  // both opaque JSON, read by a human via `npm run feedback:list`, never queried server-side.
-  `CREATE TABLE IF NOT EXISTS feedback (
-     feedback_id Utf8 NOT NULL,
-     created_at Utf8,
-     user_id Utf8,
-     app_version Utf8,
-     route Utf8,
-     message Utf8,
-     context Utf8,
-     attachment Utf8,
-     PRIMARY KEY (feedback_id)
-   );`,
-
-  // Release notes older than the few the frontend ships with (routes/changelog.ts). Keyed by
-  // `rank`, the version as a number (domain/changelog.ts versionRank), so a page is a range read
-  // in version order — 2.10.0 after 2.9.9, which the string would get wrong. The notes are the
-  // frontend's own EN/RU lists as JSON, never queried inside. Written only by
-  // `npm run changelog:publish`; no TTL — an archive is kept.
-  `CREATE TABLE IF NOT EXISTS changelog (
-     rank Uint32 NOT NULL,
-     version Utf8,
-     date Utf8,
-     en Utf8,
-     ru Utf8,
-     PRIMARY KEY (rank)
-   );`,
-]
-
-export async function migrate(): Promise<void> {
-  for (const stmt of STATEMENTS) {
-    await executeScheme(stmt)
+export async function migrate(): Promise<string[]> {
+  const sql = db()
+  await sql`CREATE TABLE IF NOT EXISTS schema_migrations (
+    name text PRIMARY KEY,
+    applied_at timestamptz NOT NULL DEFAULT now()
+  )`
+  const done = new Set((await sql<{ name: string }[]>`SELECT name FROM schema_migrations`).map((r) => r.name))
+  const files = (await readdir(DIR)).filter((f) => f.endsWith('.sql')).sort()
+  const applied: string[] = []
+  for (const name of files) {
+    if (done.has(name)) continue
+    const text = await readFile(new URL(name, DIR), 'utf8')
+    await sql.begin(async (tx) => {
+      await tx.unsafe(text)
+      await tx`INSERT INTO schema_migrations (name) VALUES (${name})`
+    })
+    applied.push(name)
   }
+  return applied
 }

@@ -1,6 +1,6 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { getSignedCookie, setSignedCookie, setCookie, getCookie, deleteCookie } from 'hono/cookie'
-import { config, isProviderName, siteForHost, type ProviderName, type Site } from '../config.js'
+import { afterLogin, config, isProviderName, returnOrigin, siteForHost, type ProviderName, type Site } from '../config.js'
 import {
   buildAuthUrl,
   createPkceState,
@@ -22,9 +22,29 @@ function isSecure(): boolean {
 
 export const authRoutes = new Hono()
 
+/**
+ * Sign the browser in: a new session and its refresh cookie. The SPA then calls /auth/refresh for
+ * an access token, whichever way the player signed in (Yandex callback, email + password).
+ */
+export async function startSession(c: Context, userId: string, site: Site): Promise<void> {
+  const cookieValue = await createSession(userId)
+  setCookie(c, REFRESH_COOKIE, cookieValue, {
+    httpOnly: true,
+    secure: isSecure(),
+    // SameSite=None (+Secure) is DELIBERATE and load-bearing: an earlier Strict broke the
+    // deployed login/refresh flow, so do NOT change it back. CSRF is still covered by the
+    // originAllowed() allow-list and by /games being Bearer-only. Lax in local http dev, where
+    // None+insecure would be rejected by the browser.
+    sameSite: isSecure() ? 'None' : 'Lax',
+    path: '/auth',
+    domain: site.cookieDomain || undefined,
+    maxAge: config.refreshTokenTtl,
+  })
+}
+
 // Reject state-changing requests whose Origin isn't allow-listed (defence-in-depth for the
 // cookie-bearing endpoints).
-function originAllowed(origin: string | undefined): boolean {
+export function originAllowed(origin: string | undefined): boolean {
   if (!origin) return true // non-browser / same-origin server calls
   return config.allowedOrigins.includes(origin)
 }
@@ -32,7 +52,7 @@ function originAllowed(origin: string | undefined): boolean {
 // Host-aware site for this request (see config.ts siteForHost): cookies, the post-login
 // redirect and the OAuth redirect_uri are all built for the domain the request came in on,
 // so login works on both the old and the new domain during the migration.
-function siteOf(c: { req: { header(name: string): string | undefined } }): Site {
+export function siteOf(c: { req: { header(name: string): string | undefined } }): Site {
   return siteForHost(c.req.header('Host'))
 }
 
@@ -42,10 +62,13 @@ authRoutes.get('/:provider/login', async (c) => {
 
   const pkce = createPkceState()
   const site = siteOf(c)
+  // A site other than this API's own may ask to be sent back to (the tracker's beta on its
+  // subdomain, 2026-10-08) — only an allow-listed https origin, never an arbitrary URL.
+  const back = returnOrigin(c.req.query('return'))
   await setSignedCookie(
     c,
     STATE_COOKIE,
-    JSON.stringify({ ...pkce, provider }),
+    JSON.stringify({ ...pkce, provider, ...(back ? { back } : {}) }),
     config.jwtSigningKey,
     { httpOnly: true, secure: isSecure(), sameSite: 'Lax', path: '/auth', maxAge: 600 },
   )
@@ -57,26 +80,36 @@ authRoutes.get('/:provider/callback', async (c) => {
   if (!isProviderName(provider)) return c.json({ error: 'unknown_provider' }, 404)
 
   const site = siteOf(c)
+  const rawCookie = await getSignedCookie(c, config.jwtSigningKey, STATE_COOKIE)
+  deleteCookie(c, STATE_COOKIE, { path: '/auth' })
+  let saved: { state: string; codeVerifier: string; provider: ProviderName; back?: string } | null = null
+  if (rawCookie) {
+    try {
+      saved = JSON.parse(rawCookie)
+    } catch {
+      saved = null
+    }
+  }
+  // A login that fails goes back to the site it started from, with its reason (`?error=`), and
+  // leaves a line in the log. Until 2026-10-09 our own failures answered with bare JSON — a
+  // player whose login came back in another browser (the Yandex app on Android) saw a page of
+  // code — and Yandex's refusals (`unauthorized_client` for child and organisation accounts)
+  // reached the site but nobody, us included, ever learned of them.
+  const fail = (reason: string) => {
+    const ua = (c.req.header('user-agent') || '').slice(0, 160)
+    console.warn(`[auth] ${provider} login failed: ${reason} | ua: ${ua}`)
+    return c.redirect(`${afterLogin(site, saved?.back)}?error=${encodeURIComponent(reason)}`)
+  }
+
   const err = c.req.query('error')
-  if (err) return c.redirect(`${site.appAfterLoginUrl}?error=${encodeURIComponent(err)}`)
+  if (err) return fail(err)
 
   const code = c.req.query('code')
   const state = c.req.query('state')
-  if (!code || !state) return c.json({ error: 'missing_code_or_state' }, 400)
-
-  const rawCookie = await getSignedCookie(c, config.jwtSigningKey, STATE_COOKIE)
-  deleteCookie(c, STATE_COOKIE, { path: '/auth' })
-  if (!rawCookie) return c.json({ error: 'missing_state_cookie' }, 400)
-
-  let saved: { state: string; codeVerifier: string; provider: ProviderName }
-  try {
-    saved = JSON.parse(rawCookie)
-  } catch {
-    return c.json({ error: 'bad_state_cookie' }, 400)
-  }
-  if (saved.provider !== provider || saved.state !== state) {
-    return c.json({ error: 'state_mismatch' }, 400)
-  }
+  if (!code || !state) return fail('missing_code_or_state')
+  if (!rawCookie) return fail('missing_state_cookie')
+  if (!saved) return fail('bad_state_cookie')
+  if (saved.provider !== provider || saved.state !== state) return fail('state_mismatch')
 
   try {
     const providerToken = await exchangeCode(provider, code, saved.codeVerifier, site)
@@ -88,22 +121,13 @@ authRoutes.get('/:provider/callback', async (c) => {
       displayName: identity.displayName,
       nowIso: new Date().toISOString(),
     })
-    const cookieValue = await createSession(userId)
-    setCookie(c, REFRESH_COOKIE, cookieValue, {
-      httpOnly: true,
-      secure: isSecure(),
-      // SameSite=None (+Secure) is DELIBERATE and load-bearing: an earlier Strict broke the
-      // deployed login/refresh flow, so do NOT change it back. CSRF is still covered by the
-      // originAllowed() allow-list and by /games being Bearer-only. Lax in local http dev, where
-      // None+insecure would be rejected by the browser.
-      sameSite: isSecure() ? 'None' : 'Lax',
-      path: '/auth',
-      domain: site.cookieDomain || undefined,
-      maxAge: config.refreshTokenTtl,
-    })
-    return c.redirect(site.appAfterLoginUrl)
+    await startSession(c, userId, site)
+    return c.redirect(afterLogin(site, saved.back))
   } catch (e) {
-    if (e instanceof OAuthError) return c.json({ error: 'oauth_failed' }, 502)
+    if (e instanceof OAuthError) {
+      console.warn(`[auth] ${e.message}`)
+      return fail('oauth_failed')
+    }
     throw e
   }
 })

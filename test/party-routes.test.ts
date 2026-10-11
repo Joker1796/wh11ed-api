@@ -201,8 +201,10 @@ const game = () => ({
   roster1: { rosterId: null, roster: null },
 })
 
-async function createParty() {
-  const res = await app.request('/party', json({ gameId: 'g1', slices: game(), seat: { side: 0, mi: null }, name: 'Host' }, hostJwt))
+async function createParty(trackerGen?: number) {
+  const slices = game()
+  if (trackerGen) Object.assign(slices.shared, { trackerGen })
+  const res = await app.request('/party', json({ gameId: 'g1', slices, seat: { side: 0, mi: null }, name: 'Host' }, hostJwt))
   assert.equal(res.status, 201)
   return (await res.json()) as {
     partyId: string
@@ -245,6 +247,20 @@ describe('create + join', () => {
     assert.equal(seats.find((m) => m.you)?.side, null)
     const byLink = await join({ invite: p.invite.token })
     assert.equal(byLink.status, 201)
+  })
+
+  it('a phone of the other tracker is turned away and told which one the host plays', async () => {
+    const beta = await createParty(2)
+    const old = await join({ code: beta.invite.code }) // a phone from before the beta says nothing
+    assert.equal(old.status, 409)
+    assert.deepEqual(old.body, { error: 'tracker_version', gen: 2 })
+    assert.equal((await join({ code: beta.invite.code, gen: 2 })).status, 201)
+    const site = await createParty()
+    assert.deepEqual((await join({ invite: site.invite.token, gen: 2 })).body, { error: 'tracker_version', gen: 1 })
+    assert.equal((await join({ invite: site.invite.token, gen: 1 })).status, 201)
+    // Turned away before taking a place: the seats list has no stray member.
+    const g = (await join({ code: beta.invite.code, gen: 2 })).body as { members: unknown[] }
+    assert.equal(g.members.length, 3) // the host, the beta phone above and this one
   })
 
   it('a wrong code or link is 404, garbage is 422', async () => {
@@ -467,6 +483,14 @@ describe('administration', () => {
     assert.equal(body.you.side, 0)
     assert.equal((await app.request(`/party/${p.partyId}/sync`, json({ since: 0 }, p.memberToken))).status, 401)
     assert.notEqual((await app.request(`/party/${p.partyId}/sync`, json({ since: 0 }, body.memberToken))).status, 401)
+  })
+
+  it('the host reclaims only from a phone of the same tracker', async () => {
+    const p = await createParty(2)
+    const old = await app.request(`/party/${p.partyId}/reclaim`, json({}, hostJwt))
+    assert.equal(old.status, 409)
+    assert.deepEqual(await old.json(), { error: 'tracker_version', gen: 2 })
+    assert.equal((await app.request(`/party/${p.partyId}/reclaim`, json({ gen: 2 }, hostJwt))).status, 200)
   })
 
   it('deleting the party kills every token', async () => {

@@ -1,103 +1,55 @@
-// `Driver` comes off the default export on purpose. ydb-sdk 5.11.1 ships an ESM build whose named
-// exports are missing exactly one thing — Driver — while TokenAuthService, TypedValues and Ydb are
-// all exported by name. Importing Driver by name works under esbuild (which is how the deployed
-// bundle is built) but throws `does not provide an export named 'Driver'` under Node's own ESM
-// resolution, which is what `npm run migrate` and `npm run dev` use. Off the default export it
-// works under both. Drop this the day upstream fixes its ESM build.
-import ydb, { AnonymousAuthService, TokenAuthService, Ydb, type IAuthService, type Driver } from 'ydb-sdk'
-
-const { Driver: DriverClass } = ydb
-import { toSnakeCaseKeys } from './rows.js'
+import postgres, { type Sql, type TransactionSql } from 'postgres'
 import { config } from '../config.js'
-import { MetadataTokenAuthService } from './metadata-auth.js'
 
-// Module-scope singleton so warm invocations reuse the gRPC connection (per Yandex guidance —
-// creating a Driver per request kills cold-start budget and leaks connections).
-let driverPromise: Promise<Driver> | null = null
+// One pool per process, made on first use: importing a repo must not open a connection (the
+// domain tests import half the tree with no database anywhere), and a long-lived Node server
+// reuses the pool for its whole life.
+let pool: Sql | null = null
 
-function makeAuthService(): IAuthService {
-  // Local dev: an IAM token via YDB_ACCESS_TOKEN. In YCF the token is empty and we use the
-  // function's attached service account through the metadata endpoint.
-  if (config.ydb.accessToken) {
-    return new TokenAuthService(config.ydb.accessToken)
+export function db(): Sql {
+  if (!pool) {
+    pool = postgres(config.databaseUrl, {
+      max: 10,
+      idle_timeout: 30,
+      connect_timeout: 10,
+      // NOTICEs ("relation already exists, skipping" and the like) are not news.
+      onnotice: () => {},
+    })
   }
-  // A plain-text endpoint is a YDB on this machine (the docker stand, `docker compose up` —
-  // see README), which authenticates nobody. Cloud endpoints are always grpcs://, so this can
-  // never widen anything in production: there the token is empty and metadata auth answers.
-  if (config.ydb.endpoint.startsWith('grpc://')) {
-    return new AnonymousAuthService()
-  }
-  return new MetadataTokenAuthService()
+  return pool
 }
 
-export function getDriver(): Promise<Driver> {
-  if (!driverPromise) {
-    driverPromise = (async () => {
-      const driver = new DriverClass({
-        endpoint: config.ydb.endpoint,
-        database: config.ydb.database,
-        authService: makeAuthService(),
-      })
-      const ready = await driver.ready(10_000)
-      if (!ready) throw new Error('YDB driver failed to become ready within 10s')
-      return driver
-    })()
+/** Either the pool or an open transaction — what a repo helper needs to run inside both. */
+export type Runner = Sql | TransactionSql
+
+export async function closeDb(): Promise<void> {
+  if (pool) {
+    const p = pool
+    pool = null
+    await p.end({ timeout: 5 })
   }
-  return driverPromise
 }
 
-export type QueryParams = Record<string, Ydb.ITypedValue>
+// serialization_failure and deadlock_detected: the two answers a SERIALIZABLE transaction gets
+// when another one won the race. Both mean "run it again", nothing more.
+const RETRYABLE = new Set(['40001', '40P01'])
+const MAX_ATTEMPTS = 5
 
 /**
- * Run a parameterized YQL query via the Query Service and return rows as plain JS objects.
- * Param keys must include the leading `$`; values are ydb-sdk TypedValues.
+ * Run `fn` as ONE serializable transaction, retried when it loses a race. The party sync needs
+ * this: "compare the versions the client based its edit on, then write" must be one unit, or two
+ * phones writing the same slice in the same instant could both pass the check. Postgres aborts one
+ * of the two with 40001 and the retry re-reads what the winner wrote — the same contract YDB's
+ * doTx gave, which retried on its own.
  */
-export async function query<T = Record<string, unknown>>(
-  text: string,
-  parameters: QueryParams = {},
-): Promise<T[]> {
-  const driver = await getDriver()
-  return driver.queryClient.do({
-    fn: async (session) => {
-      const { resultSets } = await session.execute({ text, parameters })
-      const out: T[] = []
-      for await (const rs of resultSets) {
-        for await (const row of rs.rows) out.push(toSnakeCaseKeys(row) as T)
-      }
-      return out
-    },
-  })
-}
-
-/** Run a DDL / scheme statement (CREATE TABLE, ALTER TABLE, ...). */
-export async function executeScheme(text: string): Promise<void> {
-  await query(text)
-}
-
-export type Runner = <T = Record<string, unknown>>(text: string, parameters?: QueryParams) => Promise<T[]>
-
-/**
- * Run several queries in ONE serializable transaction. `fn` gets a runner bound to the
- * transaction's session; the transaction commits when `fn` returns and rolls back when it
- * throws. The party sync needs this: "compare the versions the client based its edit on, then
- * write" must be one unit, or two phones writing the same slice in the same instant could both
- * pass the check. YDB aborts one of two conflicting transactions, and the client's retry (a
- * plain re-sync) resolves it — no lock table, no leases.
- */
-export async function transaction<T>(fn: (run: Runner) => Promise<T>): Promise<T> {
-  const driver = await getDriver()
-  return driver.queryClient.doTx({
-    txSettings: { serializableReadWrite: {} },
-    fn: async (session) => {
-      const run: Runner = async (text, parameters = {}) => {
-        const { resultSets } = await session.execute({ text, parameters })
-        const out: unknown[] = []
-        for await (const rs of resultSets) {
-          for await (const row of rs.rows) out.push(toSnakeCaseKeys(row))
-        }
-        return out as never
-      }
-      return fn(run)
-    },
-  })
+export async function transaction<T>(fn: (tx: TransactionSql) => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return (await db().begin('isolation level serializable', fn)) as T
+    } catch (e) {
+      const code = (e as { code?: string }).code
+      if (!code || !RETRYABLE.has(code) || attempt >= MAX_ATTEMPTS) throw e
+      await new Promise((r) => setTimeout(r, 5 * attempt + Math.random() * 20))
+    }
+  }
 }

@@ -1,5 +1,4 @@
-import { TypedValues } from 'ydb-sdk'
-import { query } from './driver.js'
+import { db } from './driver.js'
 
 interface BroadcastOwnRow {
   token: string | null
@@ -16,13 +15,8 @@ export async function getBroadcast(
   userId: string,
   gameId: string,
 ): Promise<{ token: string; updatedAt: string | null } | null> {
-  const rows = await query<BroadcastOwnRow>(
-    `DECLARE $user_id AS Utf8;
-     DECLARE $game_id AS Utf8;
-     SELECT token, updated_at FROM broadcasts
-     WHERE user_id = $user_id AND game_id = $game_id;`,
-    { $user_id: TypedValues.utf8(userId), $game_id: TypedValues.utf8(gameId) },
-  )
+  const rows = await db()<BroadcastOwnRow[]>`
+    SELECT token, updated_at FROM broadcasts WHERE user_id = ${userId} AND game_id = ${gameId}`
   const row = rows[0]
   if (!row?.token) return null
   return { token: row.token, updatedAt: row.updated_at || null }
@@ -41,31 +35,15 @@ export async function upsertBroadcast(input: {
   nowIso: string
   expiresAt: Date
 }): Promise<void> {
-  await query(
-    `DECLARE $user_id AS Utf8;
-     DECLARE $game_id AS Utf8;
-     DECLARE $token AS Utf8;
-     DECLARE $updated_at AS Utf8;
-     DECLARE $expires_at AS Timestamp;
-     UPSERT INTO broadcasts (user_id, game_id, token, payload, updated_at, expires_at)
-     VALUES ($user_id, $game_id, $token, NULL, $updated_at, $expires_at);`,
-    {
-      $user_id: TypedValues.utf8(input.userId),
-      $game_id: TypedValues.utf8(input.gameId),
-      $token: TypedValues.utf8(input.token),
-      $updated_at: TypedValues.utf8(input.nowIso),
-      $expires_at: TypedValues.timestamp(input.expiresAt),
-    },
-  )
+  await db()`
+    INSERT INTO broadcasts (user_id, game_id, token, payload, updated_at, expires_at)
+    VALUES (${input.userId}, ${input.gameId}, ${input.token}, NULL, ${input.nowIso}, ${input.expiresAt})
+    ON CONFLICT (user_id, game_id) DO UPDATE SET
+      token = EXCLUDED.token, payload = NULL, updated_at = EXCLUDED.updated_at, expires_at = EXCLUDED.expires_at`
 }
 
 export async function deleteBroadcast(userId: string, gameId: string): Promise<void> {
-  await query(
-    `DECLARE $user_id AS Utf8;
-     DECLARE $game_id AS Utf8;
-     DELETE FROM broadcasts WHERE user_id = $user_id AND game_id = $game_id;`,
-    { $user_id: TypedValues.utf8(userId), $game_id: TypedValues.utf8(gameId) },
-  )
+  await db()`DELETE FROM broadcasts WHERE user_id = ${userId} AND game_id = ${gameId}`
 }
 
 /**
@@ -81,35 +59,19 @@ export async function updateBroadcastPayload(input: {
   nowIso: string
   expiresAt: Date
 }): Promise<void> {
-  await query(
-    `DECLARE $user_id AS Utf8;
-     DECLARE $game_id AS Utf8;
-     DECLARE $payload AS Utf8;
-     DECLARE $updated_at AS Utf8;
-     DECLARE $expires_at AS Timestamp;
-     UPDATE broadcasts
-     SET payload = $payload, updated_at = $updated_at, expires_at = $expires_at
-     WHERE user_id = $user_id AND game_id = $game_id;`,
-    {
-      $user_id: TypedValues.utf8(input.userId),
-      $game_id: TypedValues.utf8(input.gameId),
-      $payload: TypedValues.utf8(input.json),
-      $updated_at: TypedValues.utf8(input.nowIso),
-      $expires_at: TypedValues.timestamp(input.expiresAt),
-    },
-  )
+  await db()`
+    UPDATE broadcasts SET payload = ${input.json}, updated_at = ${input.nowIso}, expires_at = ${input.expiresAt}
+    WHERE user_id = ${input.userId} AND game_id = ${input.gameId}`
 }
 
 /** The public read: resolve a token via the global index, no owner required. */
 export async function getBroadcastByToken(
   token: string,
 ): Promise<{ payload: unknown | null; updatedAt: string | null } | null> {
-  const rows = await query<BroadcastPublicRow>(
-    `DECLARE $token AS Utf8;
-     SELECT payload, updated_at FROM broadcasts VIEW idx_broadcasts_token
-     WHERE token = $token;`,
-    { $token: TypedValues.utf8(token) },
-  )
+  // `expires_at > now()`: YDB's TTL took an expired row away on its own schedule; here the sweep
+  // runs every few minutes, and an expired token must not serve in between.
+  const rows = await db()<BroadcastPublicRow[]>`
+    SELECT payload, updated_at FROM broadcasts WHERE token = ${token} AND expires_at > now()`
   const row = rows[0]
   if (!row) return null
   let payload: unknown | null = null

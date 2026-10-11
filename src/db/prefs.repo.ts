@@ -1,11 +1,10 @@
-import { TypedValues } from 'ydb-sdk'
-import { query, transaction } from './driver.js'
+import { db, transaction } from './driver.js'
 import type { PrefsScopeRow } from '../domain/prefs.js'
 
 interface PrefsRow {
   scope: string
   data: string | null
-  version: number | bigint | null
+  version: number | null
   updated_at: string | null
 }
 
@@ -25,11 +24,8 @@ function parseData(scope: string, userId: string, raw: string | null): Record<st
 // Everything in one read: a visit costs one request, and the client needs every scope anyway to
 // merge what a second device added while this one was away.
 export async function listPrefs(userId: string): Promise<PrefsScopeRow[]> {
-  const rows = await query<PrefsRow>(
-    `DECLARE $user_id AS Utf8;
-     SELECT scope, data, version, updated_at FROM user_prefs WHERE user_id = $user_id;`,
-    { $user_id: TypedValues.utf8(userId) },
-  )
+  const rows = await db()<PrefsRow[]>`
+    SELECT scope, data, version, updated_at FROM user_prefs WHERE user_id = ${userId}`
   return rows.map((r) => ({
     scope: r.scope,
     version: Number(r.version ?? 0),
@@ -59,14 +55,10 @@ export async function writePrefsScope(input: {
   nowIso: string
   maxScopes: number
 }): Promise<PrefsWriteResult> {
-  return transaction(async (run) => {
-    const stored = await run<PrefsRow>(
-      `DECLARE $user_id AS Utf8;
-       DECLARE $scope AS Utf8;
-       SELECT scope, data, version, updated_at FROM user_prefs
-       WHERE user_id = $user_id AND scope = $scope;`,
-      { $user_id: TypedValues.utf8(input.userId), $scope: TypedValues.utf8(input.scope) },
-    )
+  return transaction(async (tx) => {
+    const stored = await tx<PrefsRow[]>`
+      SELECT scope, data, version, updated_at FROM user_prefs
+      WHERE user_id = ${input.userId} AND scope = ${input.scope}`
     const row = stored[0]
     const version = Number(row?.version ?? 0)
     if (version !== input.expectedVersion) {
@@ -83,33 +75,18 @@ export async function writePrefsScope(input: {
     }
 
     if (!row) {
-      const counted = await run<{ cnt: number | bigint }>(
-        `DECLARE $user_id AS Utf8;
-         SELECT COUNT(*) AS cnt FROM user_prefs WHERE user_id = $user_id;`,
-        { $user_id: TypedValues.utf8(input.userId) },
-      )
+      const counted = await tx<{ cnt: string }[]>`
+        SELECT COUNT(*) AS cnt FROM user_prefs WHERE user_id = ${input.userId}`
       if (Number(counted[0]?.cnt ?? 0) >= input.maxScopes) return { ok: false as const, reason: 'quota' as const }
     }
 
     const next = version + 1
-    await run(
-      `DECLARE $user_id AS Utf8;
-       DECLARE $scope AS Utf8;
-       DECLARE $data AS Utf8;
-       DECLARE $version AS Uint32;
-       DECLARE $updated_at AS Utf8;
-       DECLARE $server_updated_at AS Utf8;
-       UPSERT INTO user_prefs (user_id, scope, data, version, updated_at, server_updated_at)
-       VALUES ($user_id, $scope, $data, $version, $updated_at, $server_updated_at);`,
-      {
-        $user_id: TypedValues.utf8(input.userId),
-        $scope: TypedValues.utf8(input.scope),
-        $data: TypedValues.utf8(input.json),
-        $version: TypedValues.uint32(next),
-        $updated_at: TypedValues.utf8(String(input.updatedAtMs)),
-        $server_updated_at: TypedValues.utf8(input.nowIso),
-      },
-    )
+    await tx`
+      INSERT INTO user_prefs (user_id, scope, data, version, updated_at, server_updated_at)
+      VALUES (${input.userId}, ${input.scope}, ${input.json}, ${next}, ${String(input.updatedAtMs)}, ${input.nowIso})
+      ON CONFLICT (user_id, scope) DO UPDATE SET
+        data = EXCLUDED.data, version = EXCLUDED.version, updated_at = EXCLUDED.updated_at,
+        server_updated_at = EXCLUDED.server_updated_at`
     return { ok: true as const, version: next }
   })
 }

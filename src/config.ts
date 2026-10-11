@@ -26,6 +26,8 @@ export interface OAuthProviderConfig {
   tokenUrl: string
   userInfoUrl: string
   scope: string
+  // Extra query parameters of the authorize URL, the provider's own switches.
+  authParams?: Record<string, string>
 }
 
 // Env-derived values are lazy getters so merely importing `config` never throws — only
@@ -68,19 +70,9 @@ export const config = {
     return int('REFRESH_TOKEN_TTL_SECONDS', 2_592_000)
   },
 
-  ydb: {
-    get endpoint(): string {
-      // ydb-sdk's Driver needs a scheme; Yandex's `ydb_api_endpoint` (injected by Terraform) comes
-      // as a bare "host:port", so default to grpcs:// when no scheme is present.
-      const e = req('YDB_ENDPOINT')
-      return /^grpcs?:\/\//.test(e) ? e : `grpcs://${e}`
-    },
-    get database(): string {
-      return req('YDB_DATABASE')
-    },
-    get accessToken(): string {
-      return opt('YDB_ACCESS_TOKEN')
-    },
+  // postgres://user:pass@host:port/db — the stand's compose file sets it, production's .env too.
+  get databaseUrl(): string {
+    return req('DATABASE_URL')
   },
 
   // Per-game payload cap and per-user game cap (defence-in-depth limits).
@@ -107,15 +99,25 @@ export const config = {
   maxPartySliceBytes: 32 * 1024,
   partyTtlDays: 7,
   partyCodeTtlMinutes: 10,
-  // Feedback notifications through Yandex Cloud Postbox (SMTP). Entirely optional: with no
-  // key bound the sender is inert and reports simply wait in `npm run feedback:list`. The
-  // credentials come from Lockbox like every other secret; the addresses are plain env.
+  // Feedback notifications over plain SMTP (the stand points it at Mailpit). Entirely optional:
+  // with no host or addresses the sender is inert and reports simply wait in
+  // `npm run feedback:list`. User/password may be empty for a relay that takes none.
   mail: {
-    get keyId(): string {
-      return process.env.POSTBOX_KEY_ID || ''
+    get host(): string {
+      return process.env.SMTP_HOST || ''
     },
-    get secret(): string {
-      return process.env.POSTBOX_SECRET || ''
+    get port(): number {
+      return int('SMTP_PORT', 587)
+    },
+    // true = TLS from the first byte (465); false = STARTTLS when the server offers it (587, 1025).
+    get secure(): boolean {
+      return process.env.SMTP_SECURE === 'true'
+    },
+    get user(): string {
+      return process.env.SMTP_USER || ''
+    },
+    get pass(): string {
+      return process.env.SMTP_PASS || ''
     },
     get from(): string {
       return process.env.FEEDBACK_MAIL_FROM || ''
@@ -124,10 +126,8 @@ export const config = {
       return process.env.FEEDBACK_MAIL_TO || ''
     },
     get enabled(): boolean {
-      return !!(this.keyId && this.secret && this.from && this.to)
+      return !!(this.host && this.from && this.to)
     },
-    host: 'postbox.cloud.yandex.net',
-    port: 587,
   },
 
   // Bug reports: the player's text, the auto-collected tech context, the opt-in snapshot.
@@ -146,10 +146,17 @@ export function oauthProvider(name: ProviderName): OAuthProviderConfig {
       return {
         clientId: req('YANDEX_CLIENT_ID'),
         clientSecret: req('YANDEX_CLIENT_SECRET'),
-        authUrl: 'https://oauth.yandex.ru/authorize',
-        tokenUrl: 'https://oauth.yandex.ru/token',
-        userInfoUrl: 'https://login.yandex.ru/info?format=json',
+        // Overridable for the local stand only, where stand/fake-oauth.mjs plays Yandex (README
+        // "The local stand"). The authorize URL is opened by the BROWSER, the other two by this
+        // server — inside docker they are different hosts, hence two variables.
+        authUrl: process.env.OAUTH_YANDEX_AUTHORIZE_URL || 'https://oauth.yandex.ru/authorize',
+        tokenUrl: `${process.env.OAUTH_YANDEX_SERVER_URL || 'https://oauth.yandex.ru'}/token`,
+        userInfoUrl: `${process.env.OAUTH_YANDEX_INFO_URL || 'https://login.yandex.ru/info'}?format=json`,
         scope: 'login:email login:info',
+        // Always ask which account (owner, 2026-10-10): a player with several Yandex accounts was
+        // signed in at once with the one the browser held, no choice offered (Misha). Yandex shows
+        // its consent page with the account switcher every time; one more tap for everybody else.
+        authParams: { force_confirm: 'yes' },
       }
   }
 }
@@ -199,16 +206,35 @@ export function siteForHost(host: string | undefined): Site {
   return fallback
 }
 
+// The origin a login asked to return to, when it is one of ours (https, allow-listed).
+// Plain http is accepted only when this API itself runs on http — the local stand, where every
+// "phone" is its own localhost port and must come back to its own tab. A production API is https
+// and keeps refusing anything that is not.
+export function returnOrigin(raw: string | undefined): string | null {
+  if (!raw) return null
+  const ok = raw.startsWith('https://') || (raw.startsWith('http://') && config.apiBaseUrl.startsWith('http://'))
+  if (!ok) return null
+  return config.allowedOrigins.includes(raw) ? raw : null
+}
+
+// The post-login page on the site the login started from: the same path, that origin.
+export function afterLogin(site: Site, back: string | undefined): string {
+  const origin = returnOrigin(back)
+  if (!origin) return site.appAfterLoginUrl
+  const after = new URL(site.appAfterLoginUrl)
+  return `${origin}${after.pathname}${after.search}`
+}
+
 export function redirectUri(name: ProviderName, site?: Site): string {
   return `${(site?.apiBaseUrl ?? config.apiBaseUrl)}/auth/${name}/callback`
 }
 
 // CORS origin policy (used by app.ts). A disallowed Origin gets the canonical origin back
-// instead of no header: when the app omits Access-Control-Allow-Origin, the YC
-// gateway/function platform layer fills in `*` (+ allow-credentials: true), re-opening what
-// the allow-list closed. An explicit mismatching value keeps browsers blocking and leaves
-// nothing for the platform to add. Lives here (not app.ts) so tests can import it without
-// dragging in ydb-sdk via the route graph.
+// instead of no header: when the app omitted Access-Control-Allow-Origin, Yandex's
+// gateway/function layer filled in `*` (+ allow-credentials: true), re-opening what the
+// allow-list closed — and a proxy in front can do the same. An explicit mismatching value keeps
+// browsers blocking and leaves nothing to fill in. Lives here (not app.ts) so tests can import
+// it without the route graph.
 export function corsOrigin(origin: string): string {
   const allowed = config.allowedOrigins
   // allowedOrigins is never empty (the getter throws or falls back to localhost), so the
