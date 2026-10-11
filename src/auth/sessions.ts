@@ -71,6 +71,13 @@ export async function destroyUserSessions(userId: string): Promise<void> {
   await db()`DELETE FROM sessions WHERE user_id = ${userId}`
 }
 
+/** Every session of a user but the one this refresh cookie belongs to. */
+export async function destroyOtherSessions(userId: string, keepCookie: string): Promise<void> {
+  const dot = keepCookie.indexOf('.')
+  const keep = dot < 0 ? '' : keepCookie.slice(0, dot)
+  await db()`DELETE FROM sessions WHERE user_id = ${userId} AND session_id <> ${keep}`
+}
+
 export async function destroySession(sessionId: string): Promise<void> {
   await db()`DELETE FROM sessions WHERE session_id = ${sessionId}`
 }

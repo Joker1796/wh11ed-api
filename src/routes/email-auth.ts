@@ -1,13 +1,15 @@
 import { Hono } from 'hono'
+import { getCookie } from 'hono/cookie'
 import { z } from 'zod'
 import { returnOrigin } from '../config.js'
 import { requireAuth, type AuthVars } from '../auth/middleware.js'
 import { burnHashTime, hashPassword, normalizeEmail, PASSWORD_MAX, PASSWORD_MIN, verifyPassword } from '../auth/password.js'
-import { destroyUserSessions } from '../auth/sessions.js'
+import { destroyOtherSessions, destroyUserSessions } from '../auth/sessions.js'
 import { clientIp, makeThrottle } from '../lib/throttle.js'
 import { sendUserMail } from '../mail/smtp.js'
 import {
-  consumeEmailToken, createPasswordAccount, getLoginByEmail, getLoginByUser, issueEmailToken, markVerified, setPassword,
+  addPasswordLogin, consumeEmailToken, createPasswordAccount, getLoginByEmail, getLoginByUser, issueEmailToken, markVerified,
+  setPassword,
   type TokenPurpose,
 } from '../db/password.repo.js'
 import { originAllowed, siteOf, startSession } from './auth.js'
@@ -196,4 +198,48 @@ emailAuthRoutes.post('/resend', requireAuth, async (c) => {
   if (mailByIp(ipOf(c), now) || mailByEmail(login.email, now)) return c.json({ error: 'too_many' }, 429)
   const mailSent = await mailLink({ userId: login.user_id, email: login.email, purpose: 'verify', locale: parsed.data.locale, origin: appOrigin(c, parsed.data.origin) })
   return mailSent ? c.json({ ok: true }) : c.json({ error: 'mail_failed' }, 503)
+})
+
+// ── For a signed-in player ─────────────────────────────────────────────────────────────────────
+
+const addSchema = z.object({
+  email: emailSchema,
+  password: passwordSchema,
+  locale: localeSchema,
+  origin: z.string().max(200).optional(),
+})
+
+/** A Yandex account gets an email + password as a second way in — the same account, same data. */
+emailAuthRoutes.post('/add', requireAuth, async (c) => {
+  const parsed = addSchema.safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: 'invalid_input' }, 400)
+  if (registerByIp(ipOf(c), Date.now())) return c.json({ error: 'too_many' }, 429)
+  const email = normalizeEmail(parsed.data.email)
+  const added = await addPasswordLogin({
+    userId: c.var.userId,
+    email,
+    hash: await hashPassword(parsed.data.password),
+    nowIso: new Date().toISOString(),
+  })
+  if (!added.ok) return c.json({ error: added.reason === 'taken' ? 'email_taken' : 'has_login' }, 409)
+  const mailSent = await mailLink({ userId: c.var.userId, email, purpose: 'verify', locale: parsed.data.locale, origin: appOrigin(c, parsed.data.origin) })
+  return c.json({ ok: true, verified: false, mailSent }, 201)
+})
+
+const changeSchema = z.object({ current: z.string().min(1).max(PASSWORD_MAX), password: passwordSchema })
+
+/**
+ * A new password, the current one required. Every OTHER device is signed out (this one keeps its
+ * session): changing a password is what someone does when they think another person has it.
+ */
+emailAuthRoutes.post('/password', requireAuth, async (c) => {
+  const parsed = changeSchema.safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: 'invalid_input' }, 400)
+  const login = await getLoginByUser(c.var.userId)
+  if (!login) return c.json({ error: 'not_found' }, 404)
+  if (loginByEmail(login.email, Date.now())) return c.json({ error: 'too_many' }, 429)
+  if (!(await verifyPassword(parsed.data.current, login.hash))) return c.json({ error: 'bad_credentials' }, 401)
+  await setPassword(c.var.userId, await hashPassword(parsed.data.password), new Date().toISOString())
+  await destroyOtherSessions(c.var.userId, getCookie(c, 'rt') || '')
+  return c.json({ ok: true })
 })

@@ -12,6 +12,9 @@ process.env.JWT_SIGNING_KEY ??= 'test-key-000000000000000000000000'
 const MAILPIT = process.env.MAILPIT_URL || 'http://mailpit:8025'
 
 const { app } = await import('../../src/app.js')
+const { upsertUser } = await import('../../src/db/users.repo.js')
+const { issueAccessToken } = await import('../../src/auth/jwt.js')
+const { createSession } = await import('../../src/auth/sessions.js')
 
 const ORIGIN = 'http://localhost:5173'
 let ip = 0
@@ -108,6 +111,47 @@ describe('email + password sign-in', () => {
     for (let i = 0; i < 11; i++) statuses.push((await call('/auth/email/login', { email, password: 'guess' + i })).status)
     assert.equal(statuses.at(-1), 429)
     assert.equal((await call('/auth/email/login', { email, password: 'correct horse' })).status, 429, 'locked for the window, right password or not')
+  })
+
+  it('a Yandex account adds an email + password: the same account, then signed in either way', async () => {
+    await upsertUser({ userId: 'yandex:42', email: 'from-yandex@ya.ru', displayName: 'Yandex Player', nowIso: '2026-10-01T00:00:00Z' })
+    const { token } = await issueAccessToken('yandex:42')
+    assert.equal((await call('/me', undefined, { bearer: token })).json?.login, null, 'no email sign-in yet')
+    const email = freshEmail()
+    const added = await call('/auth/email/add', { email, password: 'correct horse' }, { bearer: token })
+    assert.equal(added.status, 201)
+    assert.equal((await call('/auth/email/add', { email: freshEmail(), password: 'correct horse' }, { bearer: token })).json?.error, 'has_login')
+    await mailTo(email, 'подтвердите почту')
+    const login = await call('/auth/email/login', { email, password: 'correct horse' })
+    const t2 = await accessToken(login.cookie!)
+    assert.equal((await call('/me', undefined, { bearer: t2 })).json?.id, 'yandex:42', 'the Yandex account, not a new one')
+  })
+
+  it('an address another account owns cannot be added', async () => {
+    const email = freshEmail()
+    await call('/auth/email/register', { email, password: 'correct horse' })
+    await upsertUser({ userId: 'yandex:43', email: null, displayName: null, nowIso: '2026-10-01T00:00:00Z' })
+    const { token } = await issueAccessToken('yandex:43')
+    assert.deepEqual((await call('/auth/email/add', { email, password: 'correct horse' }, { bearer: token })).json, { error: 'email_taken' })
+  })
+
+  it('change password: the current one is required, other devices are signed out, this one stays', async () => {
+    const email = freshEmail()
+    const other = await call('/auth/email/register', { email, password: 'correct horse' })
+    const userId = (await call('/me', undefined, { bearer: (await accessToken(other.cookie!))! })).json!.id as string
+    // "This device": its own session cookie, and an access token for the same account.
+    const here = `rt=${await createSession(userId)}`
+    const { token } = await issueAccessToken(userId)
+    const change = (current: string) => app.fetch(new Request('http://localhost:8787/auth/email/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: ORIGIN, Authorization: `Bearer ${token}`, Cookie: here },
+      body: JSON.stringify({ current, password: 'battery staple' }),
+    }))
+    assert.equal((await change('wrong')).status, 401)
+    assert.equal((await change('correct horse')).status, 200)
+    assert.equal((await call('/auth/refresh', {}, { cookie: other.cookie })).status, 401, 'the other device is out')
+    assert.equal((await call('/auth/refresh', {}, { cookie: here })).status, 200, 'this device stays in')
+    assert.equal((await call('/auth/email/login', { email, password: 'battery staple' })).status, 200)
   })
 
   it('/health/mail is ok once mail has gone out', async () => {

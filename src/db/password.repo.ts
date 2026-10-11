@@ -50,6 +50,26 @@ export async function createPasswordAccount(input: {
   return { ok: true, userId }
 }
 
+export type AddResult = { ok: true } | { ok: false; reason: 'taken' | 'has_login' }
+
+/**
+ * An email + password sign-in added to an account that has none — a player who came in with
+ * Yandex gives the same account a second way in. The address must be free: an account that already
+ * owns it is another account, and merging two is not done here.
+ */
+export async function addPasswordLogin(input: { userId: string; email: string; hash: string; nowIso: string }): Promise<AddResult> {
+  if (await getLoginByUser(input.userId)) return { ok: false, reason: 'has_login' }
+  try {
+    await db()`INSERT INTO password_logins (user_id, email, hash, verified_at, created_at, updated_at)
+               VALUES (${input.userId}, ${input.email}, ${input.hash}, NULL, ${input.nowIso}, ${input.nowIso})`
+  } catch (e) {
+    if ((e as { code?: string }).code !== '23505') throw e
+    // Either constraint: the address is someone else's, or a racing second request added a login.
+    return { ok: false, reason: (await getLoginByUser(input.userId)) ? 'has_login' : 'taken' }
+  }
+  return { ok: true }
+}
+
 export async function setPassword(userId: string, hash: string, nowIso: string): Promise<void> {
   await db()`UPDATE password_logins SET hash = ${hash}, updated_at = ${nowIso} WHERE user_id = ${userId}`
 }
