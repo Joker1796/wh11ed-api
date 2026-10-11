@@ -21,9 +21,9 @@ Stack:
 - **Code:** TypeScript + [Hono](https://hono.dev) on Node 22 (`@hono/node-server`), run by `tsx`
 - **DB:** PostgreSQL 17 — plain SQL files in `migrations/`, the `postgres` driver
 - **Mail:** any SMTP relay (Mailpit on the local stand)
-- **Hosting:** a VPS with Docker — being set up (2026-10); until 2026-10-11 it ran on Yandex Cloud
-  Functions + YDB, which the Yandex outage of that day retired. `infra/` still describes that old
-  setup and goes when it is shut down.
+- **Hosting:** one Selectel server with Docker and Caddy (README "Deploy"); until 2026-10-11 it ran
+  on Yandex Cloud Functions + YDB, which the Yandex outage of that day retired. `infra/` still
+  describes that old setup and goes when it is shut down.
 
 ## Architecture
 
@@ -308,10 +308,34 @@ npm run typecheck
 
 ## Deploy
 
-**Being rebuilt (2026-10).** The Yandex Cloud Functions deploy (`scripts/deploy.sh`, the YC
-adapter, the bundle) left with YDB; the VPS deploy — Docker + Caddy + PostgreSQL, a nightly
-`pg_dump` off-site — is the next step and will be written down here. The plan is the hub's journal
-`2026-10-11-backend-move.md`.
+One server (Selectel, Saint Petersburg, `wh-rules-api`), everything in Docker: Caddy (TLS, the only
+thing listening outside) → the API → PostgreSQL. The files are `deploy/`; on the server they live
+in `/opt/wh-rules/` with the code under `app/`. Login: `ssh -i ~/.ssh/wh_rules_vps wh@<server>`
+(root and passwords are off; ufw allows 22/80/443 — and Docker publishes only Caddy's ports, since
+its own iptables rules walk past ufw).
+
+**First time on a server:**
+1. `/opt/wh-rules/.env` from `deploy/.env.prod.example`, `chmod 600`.
+2. Copy `deploy/Caddyfile` and `deploy/docker-compose.prod.yml` next to it; the code to `app/`
+   (`git archive` of the release, or rsync of a checkout without `node_modules`).
+3. `docker compose -f docker-compose.prod.yml up -d --build` — migrations run on the API's start.
+4. Point DNS at the server (Selectel zone; TTL 300 a day before). Caddy issues each name's
+   certificate once its record resolves here — not before, so do not start it with names that still
+   point elsewhere for long (Let's Encrypt limits failed attempts).
+
+**A release:** new code into `app/`, then `docker compose -f docker-compose.prod.yml up -d --build api`.
+Schema first, API second, client last (below).
+
+**Backups** (`deploy/backup.sh`, nightly from cron): `pg_dump` → `age` → S3 at a different company
+than the server. The server holds only the age **public** key; the private one is on the owner's
+machine (`~/.config/wh-rules/backup-age.key`), so neither a leaked server nor a leaked bucket
+reveals anything. 14 dailies + 12 monthlies.
+
+**Restore** (checked on the stand 2026-10-11 — every table's row count came back equal):
+```bash
+age -d -i ~/.config/wh-rules/backup-age.key wh-<stamp>.dump.age > wh.dump
+docker compose -f docker-compose.prod.yml exec -T postgres pg_restore -U wh -d wh --clean --if-exists --no-owner < wh.dump
+```
 
 ### Changing the schema
 

@@ -152,6 +152,8 @@ before changing it:
 
 ## Deploy
 
-Being rebuilt for a VPS (Docker, Caddy, PostgreSQL, nightly `pg_dump` off-site) — README "Deploy"
-and the hub journal. `infra/` is the retired Yandex Cloud setup, kept as a description until it is
+One Selectel server: Docker, Caddy, PostgreSQL, nightly `pg_dump` encrypted with age to S3 at
+another company — `deploy/` and README "Deploy". Only Caddy publishes ports (Docker bypasses ufw);
+the throttles read the first `X-Forwarded-For`, which Caddy overwrites with the real client
+address — keep that `header_up` if the proxy ever changes. `infra/` is the retired Yandex Cloud setup, kept as a description until it is
 shut down; nothing deploys from it.

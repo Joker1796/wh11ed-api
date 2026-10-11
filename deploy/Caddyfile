@@ -1,0 +1,26 @@
+# The production front door: TLS for every name (Let's Encrypt, issued and renewed by Caddy), the
+# API behind it, and the retired domain's permanent redirect. A name here gets a certificate only
+# once its DNS points at this server — until then Caddy keeps retrying with backoff.
+{
+	email {$ACME_EMAIL}
+}
+
+api.wh-rules.ru {
+	encode zstd gzip
+	reverse_proxy api:8787 {
+		# The API throttles by the FIRST X-Forwarded-For entry (lib/throttle.ts). Overwrite it with
+		# the address that actually connected, so a client cannot pick its own throttle bucket.
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+# wh11ed.ru → wh-rules.ru, path kept (the 301 of the 2026-08 domain move; it must live until at least
+# 2027-02-22 — hub journal 2026-07-20-domain-migration.md). The old domain sends HSTS, so a browser
+# reaches it only over https: the redirect needs real certificates, which is why it lives here and
+# not in the registrar's web-forwarding (http only).
+wh11ed.ru, www.wh11ed.ru {
+	redir https://wh-rules.ru{uri} permanent
+}
+api.wh11ed.ru {
+	redir https://api.wh-rules.ru{uri} permanent
+}
