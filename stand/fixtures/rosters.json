@@ -1,0 +1,142 @@
+[
+  {
+    "id": "stand-leaders",
+    "name": "Проверка: лидеры и апгрейд на весь отряд",
+    "faction": "space-marines",
+    "detachments": [
+      "Assault Brethren"
+    ],
+    "battleSize": "strike-force",
+    "notes": "",
+    "units": [
+      {
+        "uid": "leaders-cap",
+        "id": "captain",
+        "size": 0,
+        "warlord": true,
+        "leaderOf": "leaders-i1"
+      },
+      {
+        "uid": "leaders-anc",
+        "id": "ancient",
+        "size": 0,
+        "leaderOf": "leaders-i1"
+      },
+      {
+        "uid": "leaders-i1",
+        "id": "intercessor-squad",
+        "size": 0,
+        "enh": "Furious Assault (Upgrade)"
+      },
+      {
+        "uid": "leaders-i2",
+        "id": "intercessor-squad",
+        "size": 0
+      }
+    ],
+    "createdAt": 1790856000000,
+    "updatedAt": 1790856000000,
+    "summary": {
+      "points": 310,
+      "unitCount": 4,
+      "issues": 0,
+      "v": ""
+    }
+  },
+  {
+    "id": "stand-havocs",
+    "name": "Проверка: Havocs — замена «одно из двух»",
+    "faction": "chaos-space-marines",
+    "detachments": [
+      "Veterans of the Long War"
+    ],
+    "battleSize": "incursion",
+    "notes": "",
+    "units": [
+      {
+        "uid": "havocs-l",
+        "id": "chaos-lord",
+        "size": 0,
+        "warlord": true
+      },
+      {
+        "uid": "havocs-h1",
+        "id": "havocs",
+        "size": 0,
+        "wg": [
+          [
+            2,
+            1,
+            4
+          ],
+          [
+            0,
+            1,
+            1
+          ]
+        ]
+      },
+      {
+        "uid": "havocs-h2",
+        "id": "havocs",
+        "size": 0
+      }
+    ],
+    "createdAt": 1790859600000,
+    "updatedAt": 1790859600000,
+    "summary": {
+      "points": 365,
+      "unitCount": 3,
+      "issues": 0,
+      "v": ""
+    }
+  },
+  {
+    "id": "stand-breachers",
+    "name": "Проверка: замены «на профиль» (Breachers)",
+    "faction": "imperial-agents",
+    "detachments": [
+      "Imperialis Fleet"
+    ],
+    "battleSize": "incursion",
+    "notes": "",
+    "units": [
+      {
+        "uid": "breachers-q",
+        "id": "inquisitor",
+        "size": 0,
+        "warlord": true
+      },
+      {
+        "uid": "breachers-b1",
+        "id": "imperial-navy-breachers",
+        "size": 0,
+        "wg": [
+          [
+            2,
+            0,
+            1
+          ],
+          [
+            1,
+            0,
+            1
+          ]
+        ]
+      },
+      {
+        "uid": "breachers-b2",
+        "id": "imperial-navy-breachers",
+        "size": 0
+      }
+    ],
+    "createdAt": 1790863200000,
+    "updatedAt": 1790863200000,
+    "summary": {
+      "points": 235,
+      "unitCount": 3,
+      "issues": 0,
+      "v": ""
+    }
+  }
+]

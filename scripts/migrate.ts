@@ -1,9 +1,10 @@
 import { migrate } from '../src/db/schema.js'
 
-// Create/verify the YDB schema. Safe to re-run (CREATE TABLE IF NOT EXISTS + idempotent TTL).
+// Apply the SQL files in /migrations that have not run yet. Safe to re-run: what ran is recorded
+// in `schema_migrations`. Needs DATABASE_URL (the stand's compose file sets it).
 migrate()
-  .then(() => {
-    console.log('Schema applied.')
+  .then((applied) => {
+    console.log(applied.length ? `Applied: ${applied.join(', ')}` : 'Schema is up to date.')
     process.exit(0)
   })
   .catch((err) => {

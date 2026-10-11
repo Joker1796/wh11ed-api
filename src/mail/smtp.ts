@@ -1,17 +1,16 @@
 import nodemailer, { type Transporter } from 'nodemailer'
 import { config } from '../config.js'
 
-// Feedback notifications through Yandex Cloud Postbox (SMTP): the API key's id is the
-// username, its secret the password, and the From address must be an identity verified in
-// Postbox. Everything here is OPTIONAL and best-effort by construction:
+// Feedback notifications over SMTP — any relay: the provider's in production, Mailpit on the
+// local stand. Everything here is OPTIONAL and best-effort by construction:
 //
-//   * with no credentials bound, `sendFeedbackMail` is a no-op — a deployment without the
-//     Lockbox secret behaves exactly as it did before the feature existed;
+//   * with no SMTP host or addresses set, `sendFeedbackMail` is a no-op — a deployment without
+//     mail behaves exactly as it did before the feature existed;
 //   * a failure is logged and swallowed: the report is already in the database, and the
 //     player must not see an error because an SMTP server was slow;
-//   * the send is capped by a timeout AND an hourly ceiling, because a serverless function
-//     has no "after the response" — every second here is a second the player waits, and a
-//     spam wave that slips past the per-IP throttle must not turn into a mail flood.
+//   * the send is capped by a timeout AND an hourly ceiling: the route awaits it, so every
+//     second here is a second the player waits, and a spam wave that slips past the per-IP
+//     throttle must not turn into a mail flood.
 
 const SEND_TIMEOUT_MS = 4000
 const MAX_MAILS_PER_HOUR = 20
@@ -22,12 +21,12 @@ let transport: Transporter | null = null
 function getTransport(): Transporter | null {
   if (!config.mail.enabled) return null
   if (!transport) {
-    // Module-scope, like the YDB driver: a warm invocation reuses the connection pool.
+    // Module-scope, like the database pool: one transport for the life of the process.
     transport = nodemailer.createTransport({
       host: config.mail.host,
       port: config.mail.port,
-      secure: false, // STARTTLS on 587, which nodemailer negotiates itself
-      auth: { user: config.mail.keyId, pass: config.mail.secret },
+      secure: config.mail.secure, // false = STARTTLS when offered, which nodemailer negotiates itself
+      ...(config.mail.user ? { auth: { user: config.mail.user, pass: config.mail.pass } } : {}),
       connectionTimeout: SEND_TIMEOUT_MS,
       greetingTimeout: SEND_TIMEOUT_MS,
       socketTimeout: SEND_TIMEOUT_MS,

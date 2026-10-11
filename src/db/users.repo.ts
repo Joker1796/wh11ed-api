@@ -1,5 +1,4 @@
-import { TypedValues } from 'ydb-sdk'
-import { query } from './driver.js'
+import { db } from './driver.js'
 
 export interface User {
   user_id: string
@@ -9,11 +8,8 @@ export interface User {
 }
 
 export async function getUser(userId: string): Promise<User | null> {
-  const rows = await query<User>(
-    `DECLARE $user_id AS Utf8;
-     SELECT user_id, email, display_name, created_at FROM users WHERE user_id = $user_id;`,
-    { $user_id: TypedValues.utf8(userId) },
-  )
+  const rows = await db()<User[]>`
+    SELECT user_id, email, display_name, created_at FROM users WHERE user_id = ${userId}`
   const row = rows[0]
   if (!row) return null
   // Absent values are stored as '' (codebase convention, mirroring games.repo); normalize
@@ -39,34 +35,18 @@ export async function upsertUser(input: {
 }): Promise<User> {
   const existing = await getUser(input.userId)
   if (existing) {
-    await query(
-      `DECLARE $user_id AS Utf8;
-       DECLARE $email AS Utf8;
-       DECLARE $display_name AS Utf8;
-       UPSERT INTO users (user_id, email, display_name) VALUES ($user_id, $email, $display_name);`,
-      {
-        $user_id: TypedValues.utf8(input.userId),
-        $email: TypedValues.utf8(input.email ?? ''),
-        $display_name: TypedValues.utf8(input.displayName ?? ''),
-      },
-    )
+    await db()`
+      UPDATE users SET email = ${input.email ?? ''}, display_name = ${input.displayName ?? ''}
+      WHERE user_id = ${input.userId}`
     return { ...existing, email: input.email ?? null, display_name: input.displayName ?? null }
   }
 
-  await query(
-    `DECLARE $user_id AS Utf8;
-     DECLARE $email AS Utf8;
-     DECLARE $display_name AS Utf8;
-     DECLARE $created_at AS Utf8;
-     UPSERT INTO users (user_id, email, display_name, created_at)
-     VALUES ($user_id, $email, $display_name, $created_at);`,
-    {
-      $user_id: TypedValues.utf8(input.userId),
-      $email: TypedValues.utf8(input.email ?? ''),
-      $display_name: TypedValues.utf8(input.displayName ?? ''),
-      $created_at: TypedValues.utf8(input.nowIso),
-    },
-  )
+  // ON CONFLICT: two first sign-ins racing must not fail one of them; the loser just refreshes
+  // the names, which is what a returning sign-in does anyway.
+  await db()`
+    INSERT INTO users (user_id, email, display_name, created_at)
+    VALUES (${input.userId}, ${input.email ?? ''}, ${input.displayName ?? ''}, ${input.nowIso})
+    ON CONFLICT (user_id) DO UPDATE SET email = EXCLUDED.email, display_name = EXCLUDED.display_name`
   return {
     user_id: input.userId,
     email: input.email ?? null,

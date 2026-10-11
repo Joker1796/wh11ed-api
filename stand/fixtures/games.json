@@ -1,0 +1,473 @@
+[
+  {
+    "id": "stand-game-1",
+    "createdAt": "2026-09-28T16:00:00.000Z",
+    "phase": "finished",
+    "currentRound": 1,
+    "currentTurn": 0,
+    "currentPhase": "command",
+    "settings": {
+      "trackCP": true,
+      "firstTurn": 1,
+      "layout": "A",
+      "battleSize": "strikeForce",
+      "scoreMode": "vp",
+      "twist": null,
+      "twistMission": null
+    },
+    "players": [
+      {
+        "isYou": true,
+        "name": "Алиса",
+        "factionSlug": "space-marines",
+        "detachments": [
+          "Gladius Task Force"
+        ],
+        "disposition": "take-and-hold",
+        "role": "attacker",
+        "secondaryMode": "tactical",
+        "battleReady": false,
+        "rosterId": null,
+        "roster": null,
+        "primarySlug": "immovable-object",
+        "cp": 0,
+        "army": {},
+        "rounds": [
+          {
+            "primary": 10,
+            "picks": {}
+          },
+          {
+            "primary": 8,
+            "picks": {}
+          },
+          {
+            "primary": 9,
+            "picks": {}
+          },
+          {
+            "primary": 7,
+            "picks": {}
+          },
+          {
+            "primary": 6,
+            "picks": {}
+          }
+        ],
+        "secondary": {
+          "deck": [
+            "display-of-might",
+            "bring-it-down",
+            "plunder",
+            "defend-stronghold",
+            "assassination",
+            "overwhelming-force",
+            "a-tempting-target",
+            "a-grievous-blow",
+            "forward-position",
+            "beacon",
+            "outflank",
+            "burden-of-trust",
+            "no-prisoners",
+            "secure-no-man-s-land",
+            "behind-enemy-lines",
+            "engage-on-all-fronts",
+            "centre-ground",
+            "cleanse"
+          ],
+          "hand": [],
+          "drawn": {},
+          "discarded": [],
+          "scored": []
+        }
+      },
+      {
+        "isYou": false,
+        "name": "Боб",
+        "factionSlug": "chaos-space-marines",
+        "detachments": [
+          "Veterans of the Long War"
+        ],
+        "disposition": "purge-the-foe",
+        "role": "defender",
+        "secondaryMode": "tactical",
+        "battleReady": false,
+        "rosterId": null,
+        "roster": null,
+        "primarySlug": "unstoppable-force",
+        "cp": 0,
+        "army": {},
+        "rounds": [
+          {
+            "primary": 5,
+            "picks": {}
+          },
+          {
+            "primary": 6,
+            "picks": {}
+          },
+          {
+            "primary": 8,
+            "picks": {}
+          },
+          {
+            "primary": 9,
+            "picks": {}
+          },
+          {
+            "primary": 7,
+            "picks": {}
+          }
+        ],
+        "secondary": {
+          "deck": [
+            "behind-enemy-lines",
+            "secure-no-man-s-land",
+            "centre-ground",
+            "cleanse",
+            "forward-position",
+            "beacon",
+            "a-tempting-target",
+            "engage-on-all-fronts",
+            "no-prisoners",
+            "display-of-might",
+            "bring-it-down",
+            "overwhelming-force",
+            "defend-stronghold",
+            "outflank",
+            "a-grievous-blow",
+            "plunder",
+            "assassination",
+            "burden-of-trust"
+          ],
+          "hand": [],
+          "drawn": {},
+          "discarded": [],
+          "scored": []
+        }
+      }
+    ],
+    "finishedAt": "2026-09-28T18:30:00.000Z",
+    "endReason": "completed",
+    "result": {
+      "totals": [
+        40,
+        35
+      ]
+    }
+  },
+  {
+    "id": "stand-game-2",
+    "createdAt": "2026-10-04T14:30:00.000Z",
+    "phase": "finished",
+    "currentRound": 1,
+    "currentTurn": 0,
+    "currentPhase": "command",
+    "settings": {
+      "trackCP": true,
+      "firstTurn": 1,
+      "layout": "A",
+      "battleSize": "strikeForce",
+      "scoreMode": "vp",
+      "twist": null,
+      "twistMission": null
+    },
+    "players": [
+      {
+        "isYou": true,
+        "name": "Алиса",
+        "factionSlug": "space-marines",
+        "detachments": [
+          "Gladius Task Force"
+        ],
+        "disposition": "take-and-hold",
+        "role": "attacker",
+        "secondaryMode": "tactical",
+        "battleReady": false,
+        "rosterId": null,
+        "roster": null,
+        "primarySlug": "immovable-object",
+        "cp": 0,
+        "army": {},
+        "rounds": [
+          {
+            "primary": 5,
+            "picks": {}
+          },
+          {
+            "primary": 6,
+            "picks": {}
+          },
+          {
+            "primary": 4,
+            "picks": {}
+          },
+          {
+            "primary": 8,
+            "picks": {}
+          },
+          {
+            "primary": 7,
+            "picks": {}
+          }
+        ],
+        "secondary": {
+          "deck": [
+            "burden-of-trust",
+            "display-of-might",
+            "cleanse",
+            "plunder",
+            "secure-no-man-s-land",
+            "overwhelming-force",
+            "outflank",
+            "no-prisoners",
+            "centre-ground",
+            "a-tempting-target",
+            "assassination",
+            "engage-on-all-fronts",
+            "behind-enemy-lines",
+            "a-grievous-blow",
+            "bring-it-down",
+            "beacon",
+            "defend-stronghold",
+            "forward-position"
+          ],
+          "hand": [],
+          "drawn": {},
+          "discarded": [],
+          "scored": []
+        }
+      },
+      {
+        "isYou": false,
+        "name": "Вера",
+        "factionSlug": "imperial-agents",
+        "detachments": [
+          "Imperialis Fleet"
+        ],
+        "disposition": "purge-the-foe",
+        "role": "defender",
+        "secondaryMode": "tactical",
+        "battleReady": false,
+        "rosterId": null,
+        "roster": null,
+        "primarySlug": "unstoppable-force",
+        "cp": 0,
+        "army": {},
+        "rounds": [
+          {
+            "primary": 9,
+            "picks": {}
+          },
+          {
+            "primary": 10,
+            "picks": {}
+          },
+          {
+            "primary": 8,
+            "picks": {}
+          },
+          {
+            "primary": 9,
+            "picks": {}
+          },
+          {
+            "primary": 6,
+            "picks": {}
+          }
+        ],
+        "secondary": {
+          "deck": [
+            "display-of-might",
+            "outflank",
+            "beacon",
+            "overwhelming-force",
+            "bring-it-down",
+            "assassination",
+            "engage-on-all-fronts",
+            "a-tempting-target",
+            "a-grievous-blow",
+            "centre-ground",
+            "defend-stronghold",
+            "plunder",
+            "no-prisoners",
+            "secure-no-man-s-land",
+            "cleanse",
+            "behind-enemy-lines",
+            "forward-position",
+            "burden-of-trust"
+          ],
+          "hand": [],
+          "drawn": {},
+          "discarded": [],
+          "scored": []
+        }
+      }
+    ],
+    "finishedAt": "2026-10-04T17:00:00.000Z",
+    "endReason": "completed",
+    "result": {
+      "totals": [
+        30,
+        42
+      ]
+    }
+  },
+  {
+    "id": "stand-game-3",
+    "createdAt": "2026-10-09T16:45:00.000Z",
+    "phase": "finished",
+    "currentRound": 1,
+    "currentTurn": 0,
+    "currentPhase": "command",
+    "settings": {
+      "trackCP": true,
+      "firstTurn": 1,
+      "layout": "A",
+      "battleSize": "strikeForce",
+      "scoreMode": "vp",
+      "twist": null,
+      "twistMission": null
+    },
+    "players": [
+      {
+        "isYou": true,
+        "name": "Алиса",
+        "factionSlug": "space-marines",
+        "detachments": [
+          "Gladius Task Force"
+        ],
+        "disposition": "take-and-hold",
+        "role": "attacker",
+        "secondaryMode": "tactical",
+        "battleReady": false,
+        "rosterId": null,
+        "roster": null,
+        "primarySlug": "immovable-object",
+        "cp": 0,
+        "army": {},
+        "rounds": [
+          {
+            "primary": 12,
+            "picks": {}
+          },
+          {
+            "primary": 10,
+            "picks": {}
+          },
+          {
+            "primary": 9,
+            "picks": {}
+          },
+          {
+            "primary": 8,
+            "picks": {}
+          },
+          {
+            "primary": 6,
+            "picks": {}
+          }
+        ],
+        "secondary": {
+          "deck": [
+            "display-of-might",
+            "a-tempting-target",
+            "bring-it-down",
+            "forward-position",
+            "beacon",
+            "a-grievous-blow",
+            "assassination",
+            "behind-enemy-lines",
+            "engage-on-all-fronts",
+            "no-prisoners",
+            "cleanse",
+            "secure-no-man-s-land",
+            "overwhelming-force",
+            "burden-of-trust",
+            "plunder",
+            "centre-ground",
+            "defend-stronghold",
+            "outflank"
+          ],
+          "hand": [],
+          "drawn": {},
+          "discarded": [],
+          "scored": []
+        }
+      },
+      {
+        "isYou": false,
+        "name": "Боб",
+        "factionSlug": "chaos-space-marines",
+        "detachments": [
+          "Veterans of the Long War"
+        ],
+        "disposition": "purge-the-foe",
+        "role": "defender",
+        "secondaryMode": "tactical",
+        "battleReady": false,
+        "rosterId": null,
+        "roster": null,
+        "primarySlug": "unstoppable-force",
+        "cp": 0,
+        "army": {},
+        "rounds": [
+          {
+            "primary": 4,
+            "picks": {}
+          },
+          {
+            "primary": 5,
+            "picks": {}
+          },
+          {
+            "primary": 6,
+            "picks": {}
+          },
+          {
+            "primary": 7,
+            "picks": {}
+          },
+          {
+            "primary": 3,
+            "picks": {}
+          }
+        ],
+        "secondary": {
+          "deck": [
+            "outflank",
+            "a-tempting-target",
+            "defend-stronghold",
+            "centre-ground",
+            "assassination",
+            "secure-no-man-s-land",
+            "forward-position",
+            "no-prisoners",
+            "display-of-might",
+            "beacon",
+            "cleanse",
+            "engage-on-all-fronts",
+            "overwhelming-force",
+            "a-grievous-blow",
+            "plunder",
+            "bring-it-down",
+            "behind-enemy-lines",
+            "burden-of-trust"
+          ],
+          "hand": [],
+          "drawn": {},
+          "discarded": [],
+          "scored": []
+        }
+      }
+    ],
+    "finishedAt": "2026-10-09T19:15:00.000Z",
+    "endReason": "completed",
+    "result": {
+      "totals": [
+        45,
+        25
+      ]
+    }
+  }
+]

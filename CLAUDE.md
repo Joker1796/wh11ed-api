@@ -21,50 +21,46 @@ That framing explains the shape of the code:
   actually needs and uses `.passthrough()` everywhere — the client owns the game's internal shape and
   evolves it freely. **This is the one real coupling between the two repos**: change the saved-game
   format or the auth flow on the frontend and you must check it here, and vice versa.
-- **Serverless shapes the design.** It runs as a Yandex Cloud Function, so warm invocations reuse
-  state: the YDB driver is a module-scope singleton, never per-request. The core is
-  runtime-agnostic (`app.fetch(Request)`), with Yandex confined to `adapters/`.
+- **One long-lived Node process over PostgreSQL.** Until 2026-10-11 it was a Yandex Cloud Function
+  over YDB; the Yandex outage of that day moved it (hub journal `2026-10-11-backend-move.md`). The
+  core is still runtime-agnostic (`app.fetch(Request)`), and the in-memory caches in the party
+  routes assume ONE process — scaling out would need them rethought.
 - **Some things are deliberate and must not be "fixed"** — `SameSite=None` on the session cookie
-  (an earlier `Strict` broke the deployed login), `@yandex-cloud/nodejs-sdk` marked external in the
-  bundle, `dist/package.json` forcing CommonJS. Each is explained below where it appears; check
-  before changing.
+  (an earlier `Strict` broke the deployed login), the `OAUTH_YANDEX_*` overrides existing only for
+  the stand. Each is explained below where it appears; check before changing.
 
 **Where to start:** [`README.md`](README.md) has the full HTTP contract, auth flow, deploy runbook
 and security notes — read it for the API surface. This file covers what you'd otherwise only learn
 by reading several files at once: layering, the singleton driver, the auth invariants, build gotchas.
 
-Node ≥22 required. `npm install && npm test` needs no cloud credentials — the tests are unit tests
-over the adapter and domain layers.
+Node ≥22 required. `npm install && npm test` needs no database — routes, domain and config. The SQL
+is tested against real Postgres by `npm run stand:test` (`test/db/`). **The local stand is the
+development environment: `DEVELOPMENT.md`.**
 
 ## Commands
 
 ```bash
-npm run dev        # local server at http://localhost:8787 (tsx --watch, loads .env if present)
-npm test           # node --test over test/*.test.ts (adapter + domain unit tests)
+npm run stand      # the local stand: Postgres + API + fake Yandex sign-in + Mailpit (docker compose)
+npm run stand:seed # test players and data; stand:reset wipes and reseeds
+npm run stand:test # test/db/*.test.ts — the repos against real Postgres (a *_test database)
+npm test           # node --test over test/*.test.ts — no database
 npm run typecheck  # tsc --noEmit
-npm run build      # typecheck + bundle to dist/handler.js (esbuild, single CJS file)
-npm run migrate    # create/alter YDB tables (idempotent); needs YDB_* env set
-bash scripts/deploy.sh  # build + zip + ship a new function version with yc (NOT terraform)
+npm run dev        # API on :8787 outside docker (tsx --watch, loads .env)
+npm run migrate    # apply new files in migrations/ (needs DATABASE_URL)
 ```
 
 Run a single test: `node --import tsx --test test/game.test.ts`. Node ≥22 is required (uses the
-built-in test runner and `--env-file-if-exists`). Copy `.env.example` → `.env` for local dev; a
-local `YDB_ACCESS_TOKEN` (`yc iam create-token`) is needed to hit a real YDB.
+built-in test runner and `--env-file-if-exists`).
 
 ## Architecture
 
-**Runtime-agnostic core, one adapter.** All HTTP logic is a Hono app exposed only as
-`app.fetch(Request): Promise<Response>` (`src/app.ts`). Nothing in `src/` knows about Yandex.
-Two drivers feed it the same way:
-- `src/server.ts` — `@hono/node-server` for local dev.
-- `adapters/handler.ts` — the deployed Yandex Cloud Functions entrypoint (`adapters.handler`).
-  `adapters/yc-apigw.ts` converts the API Gateway event ⇄ Web `Request`/`Response`.
-
-Porting to another runtime = a new adapter under `adapters/`; `src/` is untouched. The adapter
-boundary is the one thing that has its own unit test (`test/adapter.test.ts`).
+**Runtime-agnostic core.** All HTTP logic is a Hono app exposed only as
+`app.fetch(Request): Promise<Response>` (`src/app.ts`). `src/server.ts` serves it with
+`@hono/node-server` (stand and production alike), starts the expiry sweep and closes the pool on
+SIGTERM.
 
 **Layering:** `routes/*` (HTTP, zod validation) → `domain/*` + `db/*.repo.ts` (logic, queries) →
-`db/driver.ts` (YDB). Routes never touch the driver directly.
+`db/driver.ts` (Postgres). Routes never touch the driver directly.
 
 **Config (`src/config.ts`):** env-derived values are **lazy getters**, so importing `config` never
 throws — only *accessing* a missing required var does. This keeps the domain layer importable in
@@ -72,19 +68,24 @@ tests without a full env, while preserving fail-fast at the server/handler entry
 constants (`maxGameBytes` 64 KB, `maxGamesPerUser` 500) are fields. `oauthProvider(name)` returns
 the per-provider OAuth endpoints; add a provider here + in `ProviderName`/`isProviderName`.
 
-**YDB access (`src/db/driver.ts`):** the `Driver` is a **module-scope singleton promise** so warm
-function invocations reuse the gRPC connection — never construct a `Driver` per request. Auth is
-chosen at runtime: `YDB_ACCESS_TOKEN` (local dev) → `TokenAuthService`; empty (in YCF) →
-`MetadataTokenAuthService` (the function's attached service account via the metadata endpoint).
-All queries go through `query<T>(yql, params)` — parameterized YQL only (param keys keep the
-leading `$`, values are `ydb-sdk` `TypedValues`); never string-interpolate user input.
+**Database access (`src/db/driver.ts`):** `db()` is the one pool per process, made on first use
+(importing a repo opens nothing — the unit tests import half the tree with no database). Queries
+are `postgres` tagged templates — `` db()`… WHERE id = ${id}` `` sends `id` as a PARAMETER, never
+text; `db().unsafe` only ever takes constants. `transaction(fn)` runs `fn` SERIALIZABLE and
+retries on 40001/40P01, which is what YDB's `doTx` did on its own: the compare-then-write in the
+party sync and the prefs versions depend on it, and `test/db/party.test.ts` fails without it
+(checked: it goes red under READ COMMITTED).
 
-**Schema (`src/db/schema.ts`):** `users`, `games` (PK `(user_id, game_id)`),
-`rosters` (PK `(user_id, roster_id)`), `sessions`, `broadcasts`, `feedback`, `changelog` (the
-frontend's older release notes, PK `rank` = the version as a number — README "The release-notes
-archive"), and the three party tables (`parties`, `party_members`, `party_state`). JSON blobs and ISO timestamps are stored as `Utf8` (never queried server-side); only
-`sessions.expires_at` is a real `Timestamp` because a YDB **TTL** column auto-purges expired
-sessions. Migrations are a list of idempotent `CREATE TABLE IF NOT EXISTS` / `ALTER` statements.
+**Schema (`migrations/*.sql`, applied by `src/db/schema.ts`):** `users`, `games` (PK
+`(user_id, game_id)`), `rosters` (PK `(user_id, roster_id)`), `user_prefs`, `sessions`,
+`broadcasts`, `feedback`, `changelog` (PK `rank` = the version as a number), and the three party
+tables. The YDB columns were carried over **meaning for meaning**: blobs and the client's ISO /
+epoch-ms timestamps are `text`, `''` still means absent where the code writes `''`, and text
+ordering uses `COLLATE "C"` where it must match YDB's byte order. `expires_at` is `timestamptz`,
+and `src/db/sweep.ts` deletes expired rows every ten minutes — Postgres has no TTL. A schema
+change is a NEW migration file; an edited one is never re-applied (`schema_migrations`).
+YDB's `UPSERT` wrote only the columns it named — the ports use `ON CONFLICT … DO UPDATE SET`
+the same columns, or a plain `UPDATE` where the row must already exist.
 
 **Game payload (`src/domain/game.ts`):** the tracker game is stored as an **opaque JSON blob**.
 `gameSchema` validates only the envelope the API relies on (`id`, `players`, `createdAt`,
@@ -107,16 +108,15 @@ on the next delete, which is why the table needs no TTL column.
 
 **Shared live game (`src/domain/party.ts`, `src/db/parties.repo.ts`, `src/routes/party.ts`):**
 the one place this service holds LIVE state rather than backups, and the one place it compares
-numbers server-side (slice versions, the party `seq` — `Uint32` columns). Everything that decides
+numbers server-side (slice versions, the party `seq` — `integer` columns). Everything that decides
 who may write what is in the domain module, pure, and `test/party.test.ts` covers it;
 `test/party-routes.test.ts` drives the routes end to end against an in-memory repo through
-`mock.module` (hence `--experimental-test-module-mocks` in `npm test`) — the YQL itself is the
-one thing no test here reaches, so a schema change is verified by `npm run migrate` + a manual
-round trip. `writeSlices` is the reason `driver.ts` grew `transaction()`: compare-then-write must
+`mock.module` (hence `--experimental-test-module-mocks` in `npm test`), and
+`test/db/party.test.ts` runs the SQL — the concurrent-write race above all. `writeSlices` is the reason `driver.ts` has `transaction()`: compare-then-write must
 be one serializable unit. Two credentials meet in the routes — the host's account JWT creates a
 party and reclaims it, then EVERY phone speaks with a per-party member token (`requireMember`,
-not `requireAuth`). Warm-instance caches (state 3 s, member rows 15 s, last-seen writes 30 s)
-are what keep four polling phones at one YDB read per party per tick; every admin action drops
+not `requireAuth`). In-process caches (state 3 s, member rows 15 s, last-seen writes 30 s)
+are what keep four polling phones at one database read per party per tick; every admin action drops
 the entries it invalidates. The contract is in README "A shared live game".
 
 **Auth.** Authorization Code + PKCE; the client secret never leaves the server. **Host-aware
@@ -136,20 +136,22 @@ change it back. CSRF is still covered: `originAllowed()` runs on both `/auth` PO
 asymmetry is harmless because the SPA and API are the same site — don't "normalize" it without
 re-testing real login.)
 
-## Build & deploy specifics
+## The local stand
 
-`scripts/bundle.mjs` (esbuild) produces a single CJS `dist/handler.js` with deps inlined (ydb-sdk,
-grpc, hono are pure JS — no `node_modules` shipped). Two gotchas baked in: `@yandex-cloud/nodejs-sdk/*`
-is marked **external** (ydb-sdk lazily requires it for an auth path we don't use — our own
-`metadata-auth.ts` replaces it), and a `dist/package.json` with `"type":"commonjs"` is written so
-the CJS bundle loads correctly despite the root being `"type":"module"`.
+`docker-compose.yml` + `stand/` — the walkthrough is `DEVELOPMENT.md`. Two things worth knowing
+before changing it:
 
-`infra/` describes the live infrastructure in Terraform (Cloud Function, API Gateway with
-`openapi.yaml`, YDB, Lockbox, service accounts, managed cert) but **cannot deploy it**: the state
-was a local file in a checkout that no longer exists, and no machine has a copy. An apply from an
-empty state would try to CREATE all eleven resources, `yandex_ydb_database_serverless` — users'
-games and army lists — among them. Treat `infra/` as documentation until somebody imports the
-resources into a fresh state, and deploy with `scripts/deploy.sh`, which copies the live version's
-config (runtime, memory, service account, env, Lockbox bindings) and changes only the code plus
-whatever a gitignored `deploy.env` overrides. First-ever deploy of a NEW environment still needs
-manual DNS + cert-validation CNAMEs and a one-time `npm run migrate` — see README "Deploy".
+- **Sign-in runs the production code.** `stand/fake-oauth.mjs` answers Yandex's authorize, token
+  and info requests in Yandex's own shapes; the API differs from production only in three
+  `OAUTH_YANDEX_*` URLs. Don't add stand-only routes to the API for sign-in — that is what the fake
+  provider exists to avoid. (`/dev/jwt` predates it and stays for the frontend's dev mock.)
+- **The fixtures are snapshots made by the frontend's own code** — `stand/fixtures/rosters.json`
+  from wh11ed's test rosters (`buildTestRoster` + `summarize`), `games.json` by playing the tracker
+  store. A roster stores wargear as indices into generated data, so after an appdata bump a seeded
+  list can show the wrong gear: regenerate rather than hand-edit.
+
+## Deploy
+
+Being rebuilt for a VPS (Docker, Caddy, PostgreSQL, nightly `pg_dump` off-site) — README "Deploy"
+and the hub journal. `infra/` is the retired Yandex Cloud setup, kept as a description until it is
+shut down; nothing deploys from it.

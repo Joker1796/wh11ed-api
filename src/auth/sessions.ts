@@ -1,5 +1,4 @@
-import { TypedValues } from 'ydb-sdk'
-import { query } from '../db/driver.js'
+import { db } from '../db/driver.js'
 import { config } from '../config.js'
 import { hashToken, newToken, newId, evaluateRefresh } from './refresh-logic.js'
 
@@ -19,22 +18,9 @@ export async function createSession(userId: string): Promise<string> {
   const raw = newToken()
   const nowIso = new Date().toISOString()
   const expiresAt = new Date(Date.now() + config.refreshTokenTtl * 1000)
-  await query(
-    `DECLARE $session_id AS Utf8;
-     DECLARE $user_id AS Utf8;
-     DECLARE $refresh_hash AS Utf8;
-     DECLARE $created_at AS Utf8;
-     DECLARE $expires_at AS Timestamp;
-     UPSERT INTO sessions (session_id, user_id, refresh_hash, created_at, expires_at)
-     VALUES ($session_id, $user_id, $refresh_hash, $created_at, $expires_at);`,
-    {
-      $session_id: TypedValues.utf8(sessionId),
-      $user_id: TypedValues.utf8(userId),
-      $refresh_hash: TypedValues.utf8(hashToken(raw)),
-      $created_at: TypedValues.utf8(nowIso),
-      $expires_at: TypedValues.timestamp(expiresAt),
-    },
-  )
+  await db()`
+    INSERT INTO sessions (session_id, user_id, refresh_hash, created_at, expires_at)
+    VALUES (${sessionId}, ${userId}, ${hashToken(raw)}, ${nowIso}, ${expiresAt})`
   // Cookie value carries both the session id and the secret, so refresh is an O(1) PK lookup.
   return `${sessionId}.${raw}`
 }
@@ -53,11 +39,8 @@ export async function rotateSession(
   const raw = cookieValue.slice(dot + 1)
   if (!sessionId || !raw) return null
 
-  const rows = await query<SessionRow>(
-    `DECLARE $session_id AS Utf8;
-     SELECT session_id, user_id, refresh_hash, expires_at FROM sessions WHERE session_id = $session_id;`,
-    { $session_id: TypedValues.utf8(sessionId) },
-  )
+  const rows = await db()<SessionRow[]>`
+    SELECT session_id, user_id, refresh_hash, expires_at FROM sessions WHERE session_id = ${sessionId}`
   const row = rows[0]
   if (!row) return null
 
@@ -71,18 +54,9 @@ export async function rotateSession(
   // Rotate: new secret, same session id, extended expiry.
   const newRaw = newToken()
   const expiresAt = new Date(Date.now() + config.refreshTokenTtl * 1000)
-  await query(
-    `DECLARE $session_id AS Utf8;
-     DECLARE $refresh_hash AS Utf8;
-     DECLARE $expires_at AS Timestamp;
-     UPSERT INTO sessions (session_id, refresh_hash, expires_at)
-     VALUES ($session_id, $refresh_hash, $expires_at);`,
-    {
-      $session_id: TypedValues.utf8(sessionId),
-      $refresh_hash: TypedValues.utf8(hashToken(newRaw)),
-      $expires_at: TypedValues.timestamp(expiresAt),
-    },
-  )
+  await db()`
+    UPDATE sessions SET refresh_hash = ${hashToken(newRaw)}, expires_at = ${expiresAt}
+    WHERE session_id = ${sessionId}`
   return { userId: row.user_id, newCookie: `${sessionId}.${newRaw}` }
 }
 
@@ -93,9 +67,5 @@ export async function destroySessionByCookie(cookieValue: string): Promise<void>
 }
 
 export async function destroySession(sessionId: string): Promise<void> {
-  await query(
-    `DECLARE $session_id AS Utf8;
-     DELETE FROM sessions WHERE session_id = $session_id;`,
-    { $session_id: TypedValues.utf8(sessionId) },
-  )
+  await db()`DELETE FROM sessions WHERE session_id = ${sessionId}`
 }

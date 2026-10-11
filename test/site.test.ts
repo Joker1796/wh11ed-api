@@ -66,3 +66,13 @@ test('afterLogin: back to an allow-listed site that asked, else the default', ()
   assert.equal(returnOrigin('https://beta.wh-rules.ru/x'), null)
   assert.equal(afterLogin(site, 'https://evil.example'), 'https://wh-rules.ru/tracker/auth-callback')
 })
+
+test('returnOrigin: a local http API takes its own http phones back, a production one never', () => {
+  process.env.ALLOWED_ORIGINS = 'http://localhost:5173,http://localhost:5174'
+  process.env.API_BASE_URL = 'http://localhost:8787'
+  assert.equal(returnOrigin('http://localhost:5174'), 'http://localhost:5174')
+  assert.equal(returnOrigin('http://localhost:9999'), null, 'still only an allow-listed one')
+  process.env.API_BASE_URL = 'https://api.wh-rules.ru'
+  process.env.ALLOWED_ORIGINS = 'https://wh-rules.ru,http://localhost:5174'
+  assert.equal(returnOrigin('http://localhost:5174'), null, 'an https API refuses plain http even when listed')
+})

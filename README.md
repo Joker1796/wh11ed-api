@@ -18,28 +18,30 @@ What it does:
 
 Stack:
 
-- **Runtime:** Yandex Cloud Functions (`nodejs22`) behind Yandex API Gateway
-- **DB:** YDB serverless (scales to zero — effectively free at this scale)
-- **Code:** TypeScript + [Hono](https://hono.dev), runtime-agnostic via a thin adapter
-- **Secrets:** Yandex Lockbox (injected as env vars)
-- **Infra:** described in Terraform (`infra/`), but deployed with the `yc` CLI — see Deploy
+- **Code:** TypeScript + [Hono](https://hono.dev) on Node 22 (`@hono/node-server`), run by `tsx`
+- **DB:** PostgreSQL 17 — plain SQL files in `migrations/`, the `postgres` driver
+- **Mail:** any SMTP relay (Mailpit on the local stand)
+- **Hosting:** a VPS with Docker — being set up (2026-10); until 2026-10-11 it ran on Yandex Cloud
+  Functions + YDB, which the Yandex outage of that day retired. `infra/` still describes that old
+  setup and goes when it is shut down.
 
 ## Architecture
 
 ```
-SPA (wh-rules.ru)  ──fetch──▶  API Gateway (api.wh-rules.ru)  ──▶  Cloud Function  ──▶  YDB
-   Bearer access token (in memory) on /games, /rosters, /prefs, /me     (Hono + adapter)   Lockbox
+SPA (wh-rules.ru)  ──fetch──▶  api.wh-rules.ru  ──▶  Node (Hono)  ──▶  PostgreSQL
+   Bearer access token (in memory) on /games, /rosters, /prefs, /me
    member token on /party/{id}/*  ·  credentials:'include' on /auth/refresh
 ```
 
-All HTTP logic lives behind `app.fetch(Request): Promise<Response>` (`src/app.ts`). The only
-Yandex-specific file is `adapters/yc-apigw.ts`, which converts the gateway event ⇄ Web
-Request/Response. Porting to another runtime later = a new adapter; `src/` is untouched.
+All HTTP logic lives behind `app.fetch(Request): Promise<Response>` (`src/app.ts`); `src/server.ts`
+serves it and runs the sweep that removes expired sessions, broadcasts and parties
+(`src/db/sweep.ts` — what YDB's TTL used to do). Routes never touch the database directly:
+`routes/*` → `domain/*` + `db/*.repo.ts` → `db/driver.ts`.
 
-### Auth (Authorization Code + PKCE)
-1. SPA → `GET /auth/{provider}/login` — function stores `state`+PKCE in a short signed cookie, redirects to provider.
-2. Provider → `GET /auth/{provider}/callback` — function exchanges the code **server-side**
-   (client secret from Lockbox), fetches identity, upserts the user, creates a session, sets the
+## Auth (Authorization Code + PKCE)
+1. SPA → `GET /auth/{provider}/login` — the API stores `state`+PKCE in a short signed cookie, redirects to provider.
+2. Provider → `GET /auth/{provider}/callback` — the API exchanges the code **server-side**
+   (client secret from the server's environment), fetches identity, upserts the user, creates a session, sets the
    **refresh** cookie (`HttpOnly; Secure; SameSite=None; Path=/auth` — `None` is intentional and
    required for the flow; don't change it to `Strict`), and 302s back to the SPA.
 3. SPA → `POST /auth/refresh` (`credentials:'include'`) — rotates the refresh token, returns a
@@ -106,7 +108,7 @@ nobody reads stay out of the app's first load and out of the installed app's off
   are parallel lists of bullet strings and `{ h }` headings. Validated for shape, EN/RU parity and
   size (`src/domain/changelog.ts`); the wording is the frontend's.
 - **Ordered by version as a number** (`rank`, the table's key): 2.10.0 comes after 2.9.9.
-- **Written only by `npm run changelog:publish -- <entries.json>`** (same YDB env as `migrate`), never
+- **Written only by `npm run changelog:publish -- <entries.json>`** (needs `DATABASE_URL`, like `migrate`), never
   over HTTP. It validates every entry before writing any, upserts (idempotent by version), reads
   the rows back and compares them byte for byte; exit 0 means they are there. The frontend's deploy
   calls it with the entries it is about to drop from its file, and drops them only on exit 0.
@@ -187,7 +189,7 @@ exposes `ETag`, so a custom HTML/CSS overlay can poll it every second or two and
 **Polling etiquette.** Send `If-None-Match` and poll no faster than once a second: the gateway's
 budget is 1800 requests a minute for the WHOLE API (logins, sync and shared games included), and the app's own
 overlay spends 12 of them per viewer at its 5-second cadence. The read protects itself — a
-warm-instance micro-cache (2 s) means every viewer of one game shares a single database read,
+in-process micro-cache (2 s) means every viewer of one game shares a single database read,
 responses carry `Cache-Control: public, max-age=2`, and a single IP is capped at 60 reads a
 minute (`429` with `Retry-After: 2` past that) so one runaway client cannot spend the budget
 everyone else needs.
@@ -202,8 +204,8 @@ elsewhere.
 
 **How it is stored.** The payload is opaque like a game blob — the phone projects the read-only
 scoreboard itself, so nothing private can reach the public endpoint. The token is 128 random bits
-(an unlisted-link model: the URL is the credential); rows live in the `broadcasts` table under a
-YDB TTL (`broadcastTtlDays`, 7 days past the last touch). Only the public `GET` has open CORS
+(an unlisted-link model: the URL is the credential); rows live in the `broadcasts` table and expire
+(`broadcastTtlDays`, 7 days past the last touch; the public read checks `expires_at`, the sweep removes the row). Only the public `GET` has open CORS
 (`src/app.ts`); the push endpoint `/broadcast/live/*` keeps the allow-list like everything else.
 
 ### A shared live game (`/party`)
@@ -248,24 +250,21 @@ when the game starts, so the five slices are rewritten with the sides exchanged 
 have to travel with them; done with the seat endpoint it would take three calls and could stop
 half way, leaving a guest with no seat and a `403` on everything it writes.
 
-**Cost.** The gateway charges per request, so the reads behind them are shared: a party's state
-is served from warm-instance memory for three seconds after a read and dropped on any write to
-it — every phone of one party in that window costs one YDB read. A member's `lastSeenAt` is
+**Cost.** Polling phones are the load, so the reads behind them are shared: a party's state is
+served from process memory for three seconds after a read and dropped on any write to it — every
+phone of one party in that window costs one database read. A member's `lastSeenAt` is
 written at most every 30 s. Joins are throttled per address (10 a minute — a code is six digits
 and lives ten minutes, so a guesser sees it expire long before the odds mean anything); syncs per
 MEMBER (60 a minute), never per address, because a tournament hall puts every phone behind one
-NAT. **The gateway's rate limit is the number to watch**: four phones at a three-second tick are
-80 requests a minute for ONE game. The live gateway runs at **1800 rpm** (raised by hand on
-2026-09-18, before shared games reached players) — about twenty concurrent games together with
-logins and backups. `infra/openapi.yaml` still records the old 600: Terraform cannot apply it, so
-the live spec is changed with `yc serverless api-gateway update` or the console, and the file has
-to be brought along by hand.
+NAT. Four phones at a three-second tick are 80 requests a minute for ONE game — the number to
+size a front-door rate limit by (Yandex's gateway ran at 1800 rpm, about twenty concurrent games
+together with logins and backups).
 
-**Lifetime.** Rows in `parties`, `party_members` and `party_state` sit under a YDB TTL (7 days
-past the last write; members past their last touch); `DELETE /party/{id}` ends it at once. A
+**Lifetime.** Rows in `parties`, `party_members` and `party_state` expire 7 days past the last
+write (members past their last touch) and are swept (`src/db/sweep.ts`); `DELETE /party/{id}` ends it at once. A
 member token is stored hashed like a refresh token; the invite token is stored plain like a
 broadcast token — the link is the credential. Kicking a member clears its token immediately (the
-in-memory member cache is dropped with it; another warm instance learns within 15 s).
+in-memory member cache is dropped with it; a second process, if one ever runs, learns within 15 s).
 
 ### Army lists (`/rosters`)
 
@@ -280,158 +279,75 @@ on the next delete. Caps: 32 KB per roster, 200 rosters per user; tombstones don
 
 ## The local stand (docker)
 
-A YDB of your own plus this API against it, so a shared game — the lobby especially — can be
-tried end to end with no cloud, no Yandex OAuth and no production database. `docker-compose.yml`
-is the whole of it.
+The whole backend on your machine — PostgreSQL, this API, a stand-in for Yandex sign-in and a mail
+catcher — with no cloud account and no secrets. **[DEVELOPMENT.md](DEVELOPMENT.md) is the
+walkthrough** (first run, test players, several "phones", tests, troubleshooting); the short form:
 
 ```bash
-npm run stand           # docker compose up -d — YDB first; on an arm64 Mac it is EMULATED, give it a minute
-npm run stand:migrate   # create the schema in /local
-npm run stand:jwt       # print a week-long dev token, if you need one by hand
-npm run stand:down      # stop it
-docker compose logs -f api
+npm run stand          # everything up and healthy (docker compose)
+npm run stand:seed     # test players Алиса / Боб / Вера and their data
+cd ../wh11ed && npm run dev    # the site on :5173, already pointed at this API
 ```
 
-Then the SPA, outside docker, **one port per "phone"**:
+Sign-in on the stand is the production code path end to end: the API redirects to
+`stand/fake-oauth.mjs`, which answers Yandex's three requests in Yandex's own shapes. The only
+switch is three `OAUTH_YANDEX_*` URLs in `config.ts`, set by the compose file and by nothing in
+production.
 
-```bash
-npm run dev                  # 5173 — the host
-npm run dev -- --port 5174   # the guest
-npm run dev -- --port 5175   # a partner, in doubles
-```
-
-`localStorage` is per ORIGIN and the port is part of an origin, so four ports are four
-independent devices in one browser — each with its own history, its own rosters and its own seat.
-The SPA's default API base is already `http://localhost:8787`, so nothing needs configuring on
-that side, and **the host signs in from the ⚙ menu — "test sign-in"**. The frontend's dev mock
-fakes the account but a shared game needs a real server, so that entry also fetches this stand's
-token (`GET /dev/jwt`, the same week-long token `npm run dev:jwt` prints) and keeps it where the
-`/party` forwarder looks. Signing out again drops it.
-
-**`/dev/jwt` exists only here.** The route is registered only when `DEV_JWT=1` is in the
-environment — the compose file sets it, nothing in production does — so it is not a guard that
-can be misconfigured, it is a route that is not there. `test/dev-jwt.test.ts` is the gate for
-that.
-
-Three things to know before blaming the stand:
-
-- **`ydbplatform/local-ydb` is published for amd64 only.** On Apple Silicon docker emulates it:
-  it works, but the first start is minutes rather than seconds and it wants a couple of GB.
-- **A plain `grpc://` endpoint means anonymous auth** (`db/driver.ts`) — that branch exists for
-  this stand. Cloud endpoints are `grpcs://`, so it can never widen anything in production.
-- **Every phone's origin must be in `ALLOWED_ORIGINS`** (the compose file lists 5173–5176). A
-  port missing there is a CORS refusal, and it looks like a broken app rather than a missing line.
-
-The stand keeps nothing: `YDB_USE_IN_MEMORY_PDISKS` means every `docker compose up` starts on an
-empty database, which is what you want when testing a join flow for the fifth time.
-
-**When the stand dies, it dies quietly.** The emulated YDB can run out of memory and stop answering
-with no error worth reading; the app then looks broken. A plain restart does not cure it — run
-`npm run stand:down`, `npm run stand` and `npm run stand:migrate` again.
-
-## Local development
+## Local development without docker
 
 ```bash
 npm install
-cp .env.example .env          # fill YDB_* and a YDB_ACCESS_TOKEN (`yc iam create-token`)
-npm run migrate               # create tables in the target YDB
+cp .env.example .env          # DATABASE_URL to any Postgres you have
+npm run migrate
 npm run dev                   # http://localhost:8787
-npm test                      # adapter + domain unit tests
+npm test                      # unit tests: routes, domain, config — no database
+npm run test:db               # the SQL against the Postgres in DATABASE_URL (a `<db>_test` database)
 npm run typecheck
 ```
 
-OAuth locally needs an app registration with redirect URI
-`http://localhost:8787/auth/yandex/callback`. Without one, `npm run dev:jwt` prints a week-long
-access token signed with the local `.env` key: the frontend's dev mock sends it when forwarding
-`/party` calls to this server (`localStorage['wh11ed-dev-jwt']`), which is how a shared game is
-tried on a stand with no real login.
-
 ## Deploy
 
-```bash
-bash scripts/deploy.sh --dry-run   # build and print the plan, change nothing
-bash scripts/deploy.sh             # ship a new function version
-```
+**Being rebuilt (2026-10).** The Yandex Cloud Functions deploy (`scripts/deploy.sh`, the YC
+adapter, the bundle) left with YDB; the VPS deploy — Docker + Caddy + PostgreSQL, a nightly
+`pg_dump` off-site — is the next step and will be written down here. The plan is the hub's journal
+`2026-10-11-backend-move.md`.
 
-It copies the config of the version currently serving traffic (runtime, memory, service account,
-environment, Lockbox bindings) and changes only the code, plus whatever a gitignored `deploy.env`
-overrides — so a secret binding cannot be silently dropped. Terraform is **not** the deploy path;
-see "Terraform is not usable" below.
+### Changing the schema
 
-Then, **first time only** (a brand-new environment, not a routine deploy):
-1. Create the DNS records: `CNAME api → <gateway default domain>` (`yc serverless api-gateway get`)
-   and the certificate-validation `CNAME` from Certificate Manager. Wait for the managed cert to
-   reach **Issued**.
-2. `npm run migrate` against the new YDB (set `YDB_ENDPOINT`/`YDB_DATABASE` to its endpoint).
-3. Register the production redirect URI (`https://api.wh-rules.ru/auth/yandex/callback`)
-   in the Yandex OAuth cabinet.
-
-### Rolling out a change that touches the schema
-
-**Order matters, always the same one — schema, then function, then client.** A function version
-that queries a column the database doesn't have yet fails every request touching it; a database
-with a column nothing reads yet costs nothing. The frontend goes last because it is the only
-layer that tolerates the others being behind (every cloud call there is best-effort).
-
-1. **`npm run migrate`** — idempotent (`CREATE TABLE IF NOT EXISTS` / `ALTER`), so re-running is
-   safe. Needs `YDB_ENDPOINT`/`YDB_DATABASE` and a `YDB_ACCESS_TOKEN` (`yc iam create-token`).
-   Note the file's own caveat: `CREATE TABLE IF NOT EXISTS` does **not** add a column to a table
-   that already exists — a new column on a live table needs its own `ALTER TABLE … ADD COLUMN`
-   statement in the list.
-2. **Build and ship the function** — `bash scripts/deploy.sh` (build, zip, and
-   `yc serverless function version create` off the live version's config).
-3. **Smoke-test with a real token** before believing it: `GET /health`, then a
-   `GET`/`PUT`/`GET`/`DELETE` round trip on the endpoints that changed.
-4. **Frontend** (`wh11ed/deploy.sh`) — only if the client half is also ready to ship.
-
-#### Two things worth knowing before you deploy (2026-08-26)
-
-**Terraform is not usable — the state is gone, not drifted.** It was a local state file (there is
-no `backend` block in `infra/versions.tf`) living in a checkout that has since been deleted; a
-search of the whole machine turns up neither `*.tfstate` nor `secret.auto.tfvars`. Running
-`terraform apply` against an empty state would try to CREATE all eleven resources, including
-`yandex_ydb_database_serverless` — the database holding users' games. Deploy with
-`yc serverless function version create` instead, mirroring the live version's config
-(`yc serverless function version get <id>` prints everything you need: runtime, entrypoint,
-memory, timeout, service account and the Lockbox secret bindings). Restoring IaC means importing
-the eleven resources into a fresh state — a separate job, not something to improvise mid-deploy.
-
-**`npm run migrate` broke once and is fixed.** ydb-sdk 5.11.1's ESM build omits exactly one name
-from its named exports — `Driver` — so importing it by name threw under Node's own ESM resolution
-while esbuild (which builds the deployed bundle) papered over it. `src/db/driver.ts` now takes the
-class off the default export, which works under both. If a future bump makes `import { Driver }`
-work again, that comment can go.
+A change is a **new** file in `migrations/` (`002_….sql`), never an edit to one that has run:
+`schema_migrations` records what ran, so an edited file is never applied again anywhere. The API
+container applies new files on start (`npm run migrate` in the compose entrypoint), and the order
+of a release stays **schema, then API, then client** — a server that reads a column the database
+lacks fails every request touching it; a column nothing reads yet costs nothing.
 
 ## Feedback notifications (optional)
 
 Bug reports always land in the `feedback` table and are read with `npm run feedback:list`;
-once dealt with they are removed with `npm run feedback:delete -- <id-prefix> …` — the table is
-an inbox, the verdicts live in the changelog and the hub's journals (`npm run users:count` is the other read-only admin query: accounts in total and per month;
-both need the YDB env `npm run migrate` uses). A
-mail notification on top is opt-in and inert until four env vars exist — `POSTBOX_KEY_ID` and
-`POSTBOX_SECRET` (a Yandex Cloud Postbox API key with the `yc.postbox.send` scope, bound from
-Lockbox) plus `FEEDBACK_MAIL_FROM` (an address verified in Postbox) and `FEEDBACK_MAIL_TO`.
-Missing any of them, `sendFeedbackMail` returns immediately and nothing else changes.
+once dealt with they are removed with `npm run feedback:delete -- <id-prefix> …` — the table is an
+inbox, the verdicts live in the changelog and the hub's journals (`npm run users:count` is the other
+read-only admin query). All of them need `DATABASE_URL`.
 
-The send is deliberately defensive: a 4-second timeout, at most 20 mails an hour per warm
-instance, and every error swallowed after a log line. The report is saved before the mail is
-attempted, so a broken SMTP path can lose a notification but never a report.
+A mail notification on top is opt-in and inert until `SMTP_HOST`, `FEEDBACK_MAIL_FROM` and
+`FEEDBACK_MAIL_TO` exist (`SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` as the relay needs).
+Missing any of the three, `sendFeedbackMail` returns immediately and nothing else changes. On the
+stand the mail goes to Mailpit, http://localhost:8025.
 
-One-time setup, all of it outside this repo: create the sending service account with the
-`postbox.sender` role, create the API key, add the Postbox address for the domain and its DKIM
-records in the DNS zone, put the key in Lockbox, then bind the secret and set the two addresses
-in `deploy.env`.
+The send is deliberately defensive: a 4-second timeout, at most 20 mails an hour per process, and
+every error swallowed after a log line. The report is saved before the mail is attempted, so a
+broken SMTP path can lose a notification but never a report.
 
 ## Security notes
 - TLS only; CORS locked to `ALLOWED_ORIGINS` with credentials (no wildcard).
 - Refresh tokens are opaque, stored only as SHA-256 hashes, single-use (rotated on every refresh), and
-  auto-expire via a YDB TTL column. `/games*`, `/rosters*` and `/prefs*` are Bearer-only → not
+  expire: `expires_at` is checked on use and swept every ten minutes (`src/db/sweep.ts`). `/games*`, `/rosters*` and `/prefs*` are Bearer-only → not
   CSRF-able.
-- A disallowed `Origin` gets the canonical origin back rather than no header — with no header the
-  Yandex platform layer would fill in `*` itself (`corsOrigin` in `src/config.ts`). The one
-  deliberate exception is the public broadcast read.
+- A disallowed `Origin` gets the canonical origin back rather than no header (`corsOrigin` in
+  `src/config.ts`) — on Yandex's platform an absent header used to be filled in with `*`, and a
+  proxy in front could do the same. The one deliberate exception is the public broadcast read.
 - All inputs validated with zod, every blob capped (`src/config.ts`): a game 64 KB and 500 per user,
   a roster 32 KB and 200 per user, a marks scope 64 KB, a party slice 32 KB, a broadcast 16 KB.
 - Member and refresh tokens stored only as hashes; invite and broadcast tokens are the link itself.
-- Secrets only in Lockbox; least-privilege service accounts; a gateway rate limit plus per-IP and
-  per-member throttles where a route is public or polled.
+- Secrets only in the server's environment (never in git); per-IP and per-member throttles where a
+  route is public or polled. The gateway's rate limit left with Yandex — its replacement comes with
+  the VPS deploy.

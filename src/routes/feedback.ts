@@ -4,7 +4,7 @@ import { ZodError } from 'zod'
 import { verifyAccessToken } from '../auth/jwt.js'
 import { parseFeedback, FeedbackPayloadError } from '../domain/feedback.js'
 import { insertFeedback } from '../db/feedback.repo.js'
-import { sendFeedbackMail } from '../mail/postbox.js'
+import { sendFeedbackMail } from '../mail/smtp.js'
 
 // Bug reports. Public on purpose — requiring an account would silence the players most worth
 // hearing from; a Bearer that happens to ride along is verified and recorded, nothing more.
