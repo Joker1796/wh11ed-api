@@ -13,7 +13,7 @@
 # Production: Timeweb S3 (https://s3.twcstorage.ru, region ru-1), bucket wh-rules-backups, cold class,
 # private, written by a bucket-only user with read+write — never the account's admin keys.
 # Keeps 14 dailies and the first of each month for 12 months.
-set -euo pipefail
+set -Eeuo pipefail   # -E: the ERR trap below must also fire inside functions (s3, prune)
 cd /opt/wh-rules
 
 # A failure is mailed to the owner (the same relay bug reports use, through the API container) with
