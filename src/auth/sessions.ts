@@ -66,6 +66,11 @@ export async function destroySessionByCookie(cookieValue: string): Promise<void>
   if (sessionId) await destroySession(sessionId)
 }
 
+/** Every session of a user ends — after a password reset, so a thief's device is signed out too. */
+export async function destroyUserSessions(userId: string): Promise<void> {
+  await db()`DELETE FROM sessions WHERE user_id = ${userId}`
+}
+
 export async function destroySession(sessionId: string): Promise<void> {
   await db()`DELETE FROM sessions WHERE session_id = ${sessionId}`
 }

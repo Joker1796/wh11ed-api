@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { getSignedCookie, setSignedCookie, setCookie, getCookie, deleteCookie } from 'hono/cookie'
 import { afterLogin, config, isProviderName, returnOrigin, siteForHost, type ProviderName, type Site } from '../config.js'
 import {
@@ -22,9 +22,29 @@ function isSecure(): boolean {
 
 export const authRoutes = new Hono()
 
+/**
+ * Sign the browser in: a new session and its refresh cookie. The SPA then calls /auth/refresh for
+ * an access token, whichever way the player signed in (Yandex callback, email + password).
+ */
+export async function startSession(c: Context, userId: string, site: Site): Promise<void> {
+  const cookieValue = await createSession(userId)
+  setCookie(c, REFRESH_COOKIE, cookieValue, {
+    httpOnly: true,
+    secure: isSecure(),
+    // SameSite=None (+Secure) is DELIBERATE and load-bearing: an earlier Strict broke the
+    // deployed login/refresh flow, so do NOT change it back. CSRF is still covered by the
+    // originAllowed() allow-list and by /games being Bearer-only. Lax in local http dev, where
+    // None+insecure would be rejected by the browser.
+    sameSite: isSecure() ? 'None' : 'Lax',
+    path: '/auth',
+    domain: site.cookieDomain || undefined,
+    maxAge: config.refreshTokenTtl,
+  })
+}
+
 // Reject state-changing requests whose Origin isn't allow-listed (defence-in-depth for the
 // cookie-bearing endpoints).
-function originAllowed(origin: string | undefined): boolean {
+export function originAllowed(origin: string | undefined): boolean {
   if (!origin) return true // non-browser / same-origin server calls
   return config.allowedOrigins.includes(origin)
 }
@@ -32,7 +52,7 @@ function originAllowed(origin: string | undefined): boolean {
 // Host-aware site for this request (see config.ts siteForHost): cookies, the post-login
 // redirect and the OAuth redirect_uri are all built for the domain the request came in on,
 // so login works on both the old and the new domain during the migration.
-function siteOf(c: { req: { header(name: string): string | undefined } }): Site {
+export function siteOf(c: { req: { header(name: string): string | undefined } }): Site {
   return siteForHost(c.req.header('Host'))
 }
 
@@ -101,19 +121,7 @@ authRoutes.get('/:provider/callback', async (c) => {
       displayName: identity.displayName,
       nowIso: new Date().toISOString(),
     })
-    const cookieValue = await createSession(userId)
-    setCookie(c, REFRESH_COOKIE, cookieValue, {
-      httpOnly: true,
-      secure: isSecure(),
-      // SameSite=None (+Secure) is DELIBERATE and load-bearing: an earlier Strict broke the
-      // deployed login/refresh flow, so do NOT change it back. CSRF is still covered by the
-      // originAllowed() allow-list and by /games being Bearer-only. Lax in local http dev, where
-      // None+insecure would be rejected by the browser.
-      sameSite: isSecure() ? 'None' : 'Lax',
-      path: '/auth',
-      domain: site.cookieDomain || undefined,
-      maxAge: config.refreshTokenTtl,
-    })
+    await startSession(c, userId, site)
     return c.redirect(afterLogin(site, saved.back))
   } catch (e) {
     if (e instanceof OAuthError) {

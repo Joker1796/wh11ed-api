@@ -84,7 +84,9 @@ export async function sendFeedbackMail(m: FeedbackMail): Promise<void> {
       }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('smtp timeout')), SEND_TIMEOUT_MS)),
     ])
+    record(true)
   } catch (e) {
+    record(false, e)
     console.error('[feedback] mail failed:', e instanceof Error ? e.message : e)
   }
 }
@@ -99,9 +101,74 @@ export async function sendAdminMail(subject: string, text: string): Promise<bool
   if (!tx) return false
   try {
     await tx.sendMail({ from: config.mail.from, to: config.mail.to, subject, text })
+    record(true)
     return true
   } catch (e) {
+    record(false, e)
     console.error('[mail] admin mail failed:', e instanceof Error ? e.message : e)
     return false
+  }
+}
+
+/**
+ * A letter to a player — the welcome link, a password reset. Bounded by a timeout like the rest; the
+ * result is the caller's to report ("we could not send the mail, try again").
+ */
+export async function sendUserMail(to: string, subject: string, text: string): Promise<boolean> {
+  const tx = getTransport()
+  if (!tx) return false
+  try {
+    await Promise.race([
+      tx.sendMail({ from: config.mail.from, to, subject, text }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('smtp timeout')), USER_SEND_TIMEOUT_MS)),
+    ])
+    record(true)
+    return true
+  } catch (e) {
+    record(false, e)
+    console.error('[mail] user mail failed:', e instanceof Error ? e.message : e)
+    return false
+  }
+}
+
+// ── Is mail getting out? ───────────────────────────────────────────────────────────────────────
+// Every send and every probe lands here; GET /health/mail answers from it, and the uptime check at
+// another company watches that endpoint — so a dead relay is reported by a channel that does not
+// depend on the relay. "Delivered" is beyond reach (spam folders, bounces arrive later as mail);
+// this is "the relay took it".
+const USER_SEND_TIMEOUT_MS = 10_000
+const FAILING_AFTER = 2
+const stats = { lastOkAt: '', lastFailAt: '', consecutiveFailures: 0, lastError: '' }
+
+function record(ok: boolean, e?: unknown) {
+  const now = new Date().toISOString()
+  if (ok) {
+    stats.lastOkAt = now
+    stats.consecutiveFailures = 0
+  } else {
+    stats.lastFailAt = now
+    stats.consecutiveFailures++
+    stats.lastError = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+  }
+}
+
+export function mailHealth(): { ok: boolean; enabled: boolean } & typeof stats {
+  const enabled = config.mail.enabled
+  return { ok: enabled && stats.consecutiveFailures < FAILING_AFTER, enabled, ...stats }
+}
+
+/** Log in to the relay without sending anything — SMTP's own "are you there". */
+export async function probeMail(): Promise<void> {
+  const tx = getTransport()
+  if (!tx) return
+  try {
+    await Promise.race([
+      tx.verify(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('smtp probe timeout')), USER_SEND_TIMEOUT_MS)),
+    ])
+    record(true)
+  } catch (e) {
+    record(false, e)
+    console.error('[mail] probe failed:', e instanceof Error ? e.message : e)
   }
 }

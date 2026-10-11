@@ -1,10 +1,10 @@
 import { db } from './driver.js'
 
 // What YDB's TTL did on its own: drop the rows whose `expires_at` has passed — sessions, live
-// broadcasts and the three party tables. YDB swept lazily (hours late was normal), so nothing
+// broadcasts, the three party tables and the one-time links mailed to players. YDB swept lazily (hours late was normal), so nothing
 // relies on promptness; the one read where a stale row would matter, the public broadcast token,
 // checks `expires_at` itself (broadcasts.repo.ts).
-const TABLES = ['sessions', 'broadcasts', 'party_state', 'party_members', 'parties'] as const
+const TABLES = ['sessions', 'broadcasts', 'party_state', 'party_members', 'parties', 'email_tokens'] as const
 
 export async function sweepExpired(): Promise<Record<string, number>> {
   const sql = db()

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { corsOrigin } from './config.js'
 import { authRoutes } from './routes/auth.js'
+import { emailAuthRoutes } from './routes/email-auth.js'
 import { broadcastRoutes } from './routes/broadcast.js'
 import { changelogRoutes } from './routes/changelog.js'
 import { feedbackRoutes } from './routes/feedback.js'
@@ -40,6 +41,15 @@ app.use('*', (c, next) => {
 })
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
+// Is mail getting out (sends + a periodic SMTP probe, src/mail/smtp.ts)? 503 when the relay keeps
+// refusing or is not configured — the uptime check watches this, so a broken relay reaches the owner
+// by a channel that does not depend on it. Details only, no addresses.
+app.get('/health/mail', async (c) => {
+  const { mailHealth } = await import('./mail/smtp.js')
+  const h = mailHealth()
+  const { ok, enabled, lastOkAt, lastFailAt, consecutiveFailures } = h
+  return c.json({ status: ok ? 'ok' : enabled ? 'failing' : 'disabled', lastOkAt, lastFailAt, consecutiveFailures }, ok ? 200 : 503)
+})
 
 // THE STAND'S ONE CONVENIENCE, and it exists only when asked for: with DEV_JWT=1 in the
 // environment (docker-compose.yml sets it; nothing in production does) this hands out the same
@@ -58,6 +68,8 @@ if (process.env.DEV_JWT === '1') {
   })
 }
 
+// Email + password sign-in (routes/email-auth.ts), mounted before the provider routes.
+app.route('/auth/email', emailAuthRoutes)
 app.route('/auth', authRoutes)
 // NOT Bearer-gated as a module: /broadcast/:token is the public read the OBS overlay polls
 // (the unguessable token is the credential); the live push inside carries its own requireAuth.
