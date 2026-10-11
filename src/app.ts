@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { corsOrigin } from './config.js'
+import { rateLimit } from './lib/rate-limit.js'
 import { authRoutes } from './routes/auth.js'
 import { emailAuthRoutes } from './routes/email-auth.js'
 import { broadcastRoutes } from './routes/broadcast.js'
@@ -39,6 +40,8 @@ app.use('*', (c, next) => {
   const isPublicBroadcast = p.startsWith('/broadcast/') && !p.startsWith('/broadcast/live/')
   return isPublicBroadcast ? openCors(c, next) : appCors(c, next)
 })
+// After CORS, so a 429 still carries the CORS headers and the site can read it.
+app.use('*', rateLimit())
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
 // Is mail getting out (sends + a periodic SMTP probe, src/mail/smtp.ts)? 503 when the relay keeps
