@@ -6,9 +6,12 @@
 # the owner's machine (~/.config/wh-rules/backup-age.key) — a leaked server or bucket reveals nothing.
 # Restore: README "Deploy → Restore".
 #
-# Runs from cron as the deploy user (/etc/cron.d/wh-rules-backup). Config in /opt/wh-rules/backup.env:
+# Runs from cron as the deploy user at 03:30 Moscow time (/etc/cron.d/wh-rules-backup, log:
+# `journalctl -t wh-backup`). Config in /opt/wh-rules/backup.env (chmod 600):
 #   S3_ENDPOINT  S3_BUCKET  AWS_ACCESS_KEY_ID  AWS_SECRET_ACCESS_KEY  AWS_DEFAULT_REGION
 #   AGE_RECIPIENT   (the public key, age1…)
+# Production: Timeweb S3 (https://s3.twcstorage.ru, region ru-1), bucket wh-rules-backups, cold class,
+# private, written by a bucket-only user with read+write — never the account's admin keys.
 # Keeps 14 dailies and the first of each month for 12 months.
 set -euo pipefail
 cd /opt/wh-rules
@@ -28,11 +31,13 @@ s3() { docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFA
   -v "$tmp:/work" amazon/aws-cli:2.27.0 --endpoint-url "$S3_ENDPOINT" "$@"; }
 
 s3 s3 cp "/work/wh-$stamp.dump.age" "s3://$S3_BUCKET/daily/wh-$stamp.dump.age" --only-show-errors
-[ "$day" = "01" ] && s3 s3 cp "/work/wh-$stamp.dump.age" "s3://$S3_BUCKET/monthly/wh-$stamp.dump.age" --only-show-errors
+if [ "$day" = "01" ]; then s3 s3 cp "/work/wh-$stamp.dump.age" "s3://$S3_BUCKET/monthly/wh-$stamp.dump.age" --only-show-errors; fi
 
 # Retention: names sort by time, so "all but the newest N" is a plain tail.
+# `aws s3 ls` exits 1 on a prefix that holds nothing yet (monthly/ until the first of a month) —
+# an empty listing, not a failure.
 prune() {
-  s3 s3 ls "s3://$S3_BUCKET/$1/" | awk '{print $4}' | sort | head -n "-$2" \
+  { s3 s3 ls "s3://$S3_BUCKET/$1/" || true; } | awk '{print $4}' | sort | head -n "-$2" \
     | while read -r name; do [ -n "$name" ] && s3 s3 rm "s3://$S3_BUCKET/$1/$name" --only-show-errors; done
 }
 prune daily 14
