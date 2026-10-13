@@ -8,6 +8,8 @@ infra
 stand
 # The stand's Swagger (SWAGGER=1, docker-compose.yml): production never loads it, so it never ships.
 src/openapi
+# Mints a week-long token with whatever key it finds — a stand convenience (npm run dev:jwt).
+scripts/dev-jwt.ts
 test
 dist
 *.log
