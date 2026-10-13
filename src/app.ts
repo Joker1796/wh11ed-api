@@ -72,9 +72,9 @@ if (process.env.DEV_JWT === '1') {
 }
 
 // The stand's API description — /openapi.json and /swagger — exists only with SWAGGER=1, the same
-// way /dev/jwt does: not registered at all otherwise. It is built by src/openapi/ out of
-// devDependencies the production image does not install, so a flag set there by mistake finds
-// nothing to load; the API says so in its log and runs without it.
+// way /dev/jwt does: not registered at all otherwise. The production image carries neither
+// src/openapi/ (.dockerignore) nor the devDependencies it is built from, so a flag set there by
+// mistake finds nothing to load; the API says so in its log and runs without it.
 if (process.env.SWAGGER === '1') {
   try {
     const { mountApiDocs } = await import('./openapi/mount.js')

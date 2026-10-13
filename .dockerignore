@@ -6,6 +6,8 @@ deploy.env
 deploy.secrets
 infra
 stand
+# The stand's Swagger (SWAGGER=1, docker-compose.yml): production never loads it, so it never ships.
+src/openapi
 test
 dist
 *.log
