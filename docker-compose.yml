@@ -89,6 +89,8 @@ services:
       FEEDBACK_MAIL_TO: owner@wh-rules.local
       # The frontend's dev mock fetches a token here for /party (useAuth.js); harmless on the stand.
       DEV_JWT: "1"
+      # The API description: http://localhost:8787/swagger (and /openapi.json). Stand only.
+      SWAGGER: "1"
       PORT: "8787"
     ports:
       - "8787:8787"

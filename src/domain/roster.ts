@@ -38,28 +38,33 @@ export const rosterSchema = z
 
 export type Roster = z.infer<typeof rosterSchema>
 
-export interface RosterMetadata {
-  rosterId: string
-  name: string
-  faction: string | null
-  updatedAt: number
+// What GET /rosters says about one list. A schema rather than an interface so the types the repo
+// returns and the stand's OpenAPI description (src/openapi/) are one statement, not two.
+export const rosterMetadataSchema = z.object({
+  rosterId: rosterIdSchema,
+  name: z.string(),
+  faction: z.string().nullable(),
+  updatedAt: z.number(),
   // Denormalised from the client's cached summary purely so the list endpoint can render a card
   // without downloading the blob. Never recomputed here — the client owns the arithmetic.
-  points: number
-  unitCount: number
-}
+  points: z.number(),
+  unitCount: z.number(),
+})
+export type RosterMetadata = z.infer<typeof rosterMetadataSchema>
 
 // A deleted list keeps nothing but its id and the moment it died — enough for another device to
 // drop its own copy, and nothing that would keep a deleted army list readable on the server.
 // `deletedAt` is the deleting client's clock (the same scale as `updatedAt`), so a list saved
 // after the delete outranks the tombstone and comes back.
-export interface RosterTombstone {
-  rosterId: string
-  deleted: true
-  deletedAt: number
-}
+export const rosterTombstoneSchema = z.object({
+  rosterId: rosterIdSchema,
+  deleted: z.literal(true),
+  deletedAt: z.number(),
+})
+export type RosterTombstone = z.infer<typeof rosterTombstoneSchema>
 
-export type RosterListEntry = RosterMetadata | RosterTombstone
+export const rosterListEntrySchema = z.union([rosterMetadataSchema, rosterTombstoneSchema])
+export type RosterListEntry = z.infer<typeof rosterListEntrySchema>
 
 export function extractMetadata(roster: Roster): RosterMetadata {
   return {

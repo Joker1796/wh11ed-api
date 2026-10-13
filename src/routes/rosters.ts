@@ -23,14 +23,16 @@ export const rosterRoutes = new Hono<{ Variables: AuthVars }>()
 
 rosterRoutes.use('*', requireAuth)
 
-const listQuerySchema = z.object({
+// The two query schemas are exported for the stand's OpenAPI description (src/openapi/), which
+// reads them rather than restating them.
+export const listQuerySchema = z.object({
   // Tombstones share the budget with live lists, hence the roomy default.
   limit: z.coerce.number().int().min(1).max(1000).default(500),
 })
 
 // The deleting client's own clock, on the same scale as a roster's `updatedAt` so the two can be
 // compared. Absent (an older client) → the server's clock, which is close enough for a delete.
-const deleteQuerySchema = z.object({
+export const deleteQuerySchema = z.object({
   at: z.coerce.number().int().nonnegative().optional(),
 })
 
