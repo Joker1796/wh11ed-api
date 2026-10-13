@@ -71,6 +71,19 @@ if (process.env.DEV_JWT === '1') {
   })
 }
 
+// The stand's API description — /openapi.json and /swagger — exists only with SWAGGER=1, the same
+// way /dev/jwt does: not registered at all otherwise. The production image carries neither
+// src/openapi/ (.dockerignore) nor the devDependencies it is built from, so a flag set there by
+// mistake finds nothing to load; the API says so in its log and runs without it.
+if (process.env.SWAGGER === '1') {
+  try {
+    const { mountApiDocs } = await import('./openapi/mount.js')
+    mountApiDocs(app)
+  } catch (err) {
+    console.warn('[wh11ed-api] SWAGGER=1 but the API description could not be built:', err)
+  }
+}
+
 // Email + password sign-in (routes/email-auth.ts), mounted before the provider routes.
 app.route('/auth/email', emailAuthRoutes)
 app.route('/auth', authRoutes)

@@ -31,14 +31,17 @@ export const gameSchema = z
 
 export type Game = z.infer<typeof gameSchema>
 
-export interface GameMetadata {
-  gameId: string
-  createdAt: string | null
-  finishedAt: string | null
-  resultSummary: string | null
+// What GET /games says about one game. A schema rather than an interface so the repo's return type
+// and the stand's OpenAPI description (src/openapi/) are one statement.
+export const gameMetadataSchema = z.object({
+  gameId: gameIdSchema,
+  createdAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+  resultSummary: z.string().nullable(),
   // Small denormalized list of {name, factionSlug} for the history list view.
-  players: { name: string; factionSlug: string | null }[]
-}
+  players: z.array(z.object({ name: z.string(), factionSlug: z.string().nullable() })),
+})
+export type GameMetadata = z.infer<typeof gameMetadataSchema>
 
 export function extractMetadata(game: Game): GameMetadata {
   const players = (game.players ?? []).map((p) => ({

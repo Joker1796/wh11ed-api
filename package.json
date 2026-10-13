@@ -38,6 +38,8 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@asteasolutions/zod-to-openapi": "^7.3.4",
+    "@hono/swagger-ui": "^0.6.1",
     "@types/node": "^22.10.2",
     "typescript": "^5.7.2"
   }

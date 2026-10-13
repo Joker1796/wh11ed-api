@@ -10,7 +10,7 @@ import { z } from 'zod'
 // wording; this validates only shape, parity and size. Written ONLY by `npm run changelog:publish`
 // (YDB credentials, not HTTP); served by the public GET in routes/changelog.ts.
 
-const SEMVER = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
+export const SEMVER = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
 
 const noteSchema = z.union([z.string().min(1), z.object({ h: z.string().min(1) }).strict()])
 

@@ -68,6 +68,8 @@ interface PartyVars {
 type Vars = { Variables: AuthVars & PartyVars }
 
 export const partyRoutes = new Hono<Vars>()
+// The three body schemas declared in this file are exported for the stand's OpenAPI description
+// (src/openapi/); the rest live in domain/party.ts.
 
 // ── Warm-instance caches ───────────────────────────────────────────────────────────────────────
 // Four phones on one game poll every three seconds; the gateway charges per request, so the
@@ -533,7 +535,7 @@ partyRoutes.get('/:id/invite', requireHost, async (c) => {
 })
 
 // A fresh code (and, with `{ link: true }`, a fresh link — the old one stops resolving).
-const inviteBodySchema = z.object({ link: z.boolean().default(false) })
+export const inviteBodySchema = z.object({ link: z.boolean().default(false) })
 partyRoutes.post('/:id/invite', requireHost, async (c) => {
   const raw = (await readJson(c)) ?? {}
   const parsed = inviteBodySchema.safeParse(raw)
@@ -561,7 +563,7 @@ async function memberOrNull(partyId: string, raw: string | undefined) {
 }
 
 // Move (or clear) another member's seat.
-const hostSeatSchema = z.object({
+export const hostSeatSchema = z.object({
   side: z.union([z.literal(0), z.literal(1)]).nullable(),
   mi: z.union([z.literal(0), z.literal(1)]).nullable().default(null),
   name: z.string().max(120).optional(),
@@ -628,7 +630,7 @@ partyRoutes.post('/:id/members/:mid/kick', requireHost, async (c) => {
 })
 
 // Hand the host role to another member. The account link (reclaim) stays with the creator.
-const transferSchema = z.object({ memberId: memberIdSchema })
+export const transferSchema = z.object({ memberId: memberIdSchema })
 partyRoutes.post('/:id/host', requireHost, async (c) => {
   const raw = await readJson(c)
   if (raw === undefined) return c.json({ error: 'invalid_json' }, 400)

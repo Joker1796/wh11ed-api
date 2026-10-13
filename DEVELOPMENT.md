@@ -34,6 +34,7 @@ needs no configuration.
 |---|---|
 | The site | http://localhost:5173 (`/ru` for Russian) |
 | The API | http://localhost:8787/health |
+| The API description (Swagger), stand only | http://localhost:8787/swagger — the raw spec at `/openapi.json` |
 | Mail (Mailpit): bug reports, confirm-email and reset-password letters | http://localhost:8025 |
 | The sign-in page | opens by itself from "Войти" in the ⚙ menu |
 | The database | `npm run stand:psql`, or any client on `localhost:5433`, user/password/db `wh` |
@@ -87,6 +88,27 @@ on 5173–5176 keep separate lists and games, but the account is the same. A sec
 same time — a private window, or another browser. A shared game itself needs only one account:
 guests join by the invite and never sign in.
 
+## The API description (Swagger)
+
+http://localhost:8787/swagger lists the routes with what each takes and returns, and runs them
+against the stand. A route behind an account needs a token: open `/dev/jwt`, copy `token`, paste it
+into **Authorize** (it survives a reload).
+
+It exists on the stand only — `SWAGGER: "1"` in `docker-compose.yml`, like `DEV_JWT`; without the
+flag the two routes are not registered, and the production image does not even install the packages
+(`devDependencies`). It is generated from the code's own zod schemas (`src/openapi/`): a request is
+described by the schema the route validates with, and where an answer has a type in `domain/`
+(the roster, game and marks lists) that type is inferred from the described schema.
+
+**On the stand every JSON answer is checked against its description** as it goes out: an answer
+that does not match, or a status nobody described, is a `[openapi]` line in `npm run stand:logs`.
+The answer itself is untouched. `test/openapi-check.test.ts` makes that check fire.
+
+**A new route** is described in `src/openapi/<area>.ts` with `describe()` (copy `rosters.ts`):
+export the route's zod schemas and read them there, never restate them. `test/openapi.test.ts`
+fails on a route the description does not list. The exact thresholds of the abuse fences are not
+written into descriptions — a route says it can answer 429, and that is all.
+
 ## Everyday commands (in wh11ed-api)
 
 ```bash
@@ -113,6 +135,9 @@ the next time the container starts (`npm run stand`), or right away with
   `docker-compose.yml`).
 - **Signed in, but the site still says "not signed in".** A leftover dev-mock session: in the ⚙
   menu choose «тест-выход», then sign in again.
+- **`npm run stand` stops at "dependency fake-oauth failed to start".** Its health check can break
+  after Docker restarts under it ("current working directory is outside of container mount
+  namespace"); `docker compose restart fake-oauth`, then `npm run stand` again.
 - **The API container keeps restarting.** `npm run stand:logs` — usually a failed migration or an
   install error. After a dependency change: `docker compose down -v` (drops the database and the
   container's node_modules) and `npm run stand`.
