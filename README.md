@@ -56,6 +56,11 @@ URLs must stay registered as Redirect URIs of the Yandex OAuth app.
 
 ## API
 
+On the local stand the same contract is browsable and runnable as Swagger:
+http://localhost:8787/swagger (the spec at `/openapi.json`), generated from the code's own zod
+schemas — see [DEVELOPMENT.md](DEVELOPMENT.md#the-api-description-swagger). Stand only; production
+does not have it.
+
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/health` | – | liveness |
