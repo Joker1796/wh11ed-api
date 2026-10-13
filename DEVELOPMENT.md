@@ -133,8 +133,6 @@ the next time the container starts (`npm run stand`), or right away with
   The API's 8787 stays: it is the frontend's default address.
 - **A phone on another port gets CORS errors.** Only 5173–5176 are allowed (`ALLOWED_ORIGINS` in
   `docker-compose.yml`).
-- **Signed in, but the site still says "not signed in".** A leftover dev-mock session: in the ⚙
-  menu choose «тест-выход», then sign in again.
 - **`npm run stand` stops at "dependency fake-oauth failed to start".** Its health check can break
   after Docker restarts under it ("current working directory is outside of container mount
   namespace"); `docker compose restart fake-oauth`, then `npm run stand` again.

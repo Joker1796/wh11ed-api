@@ -144,7 +144,8 @@ before changing it:
 - **Sign-in runs the production code.** `stand/fake-oauth.mjs` answers Yandex's authorize, token
   and info requests in Yandex's own shapes; the API differs from production only in three
   `OAUTH_YANDEX_*` URLs. Don't add stand-only routes to the API for sign-in — that is what the fake
-  provider exists to avoid. (`/dev/jwt` predates it and stays for the frontend's dev mock.)
+  provider exists to avoid. (`/dev/jwt` predates it; the frontend's dev mock that used it is
+  gone, and it stays for the Swagger page's Authorize — DEVELOPMENT.md.)
 - **The fixtures are snapshots made by the frontend's own code** — `stand/fixtures/rosters.json`
   from wh11ed's test rosters (`buildTestRoster` + `summarize`), `games.json` by playing the tracker
   store. A roster stores wargear as indices into generated data, so after an appdata bump a seeded
