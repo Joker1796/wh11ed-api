@@ -36,12 +36,15 @@ export const prefsPutSchema = z.object({
   data: prefsDataSchema,
 })
 
-export interface PrefsScopeRow {
-  scope: string
-  version: number
-  updatedAt: number
-  data: Record<string, unknown>
-}
+// One scope as GET /prefs and a refused PUT return it. A schema so the repo's return type and the
+// stand's OpenAPI description (src/openapi/) are one statement.
+export const prefsScopeRowSchema = z.object({
+  scope: z.string(),
+  version: z.number(),
+  updatedAt: z.number(),
+  data: prefsDataSchema,
+})
+export type PrefsScopeRow = z.infer<typeof prefsScopeRowSchema>
 
 export class PrefsPayloadError extends Error {}
 

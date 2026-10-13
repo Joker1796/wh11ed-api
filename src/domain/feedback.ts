@@ -7,7 +7,7 @@ import { config } from '../config.js'
 // validate only shape and size. `website` is the honeypot: a real form never fills it, so a
 // non-empty value marks the sender as a bot (the route pretends success and drops it).
 
-const feedbackSchema = z.object({
+export const feedbackSchema = z.object({
   message: z.string().min(1),
   context: z.object({}).passthrough().optional(),
   attachment: z.object({}).passthrough().optional(),

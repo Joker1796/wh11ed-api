@@ -1,75 +1,74 @@
 import { z } from 'zod'
 import { rosterIdSchema, rosterListEntrySchema, rosterSchema } from '../domain/roster.js'
 import { deleteQuerySchema, listQuerySchema } from '../routes/rosters.js'
-import { bearerAuth, errorBody, json, registry } from './registry.js'
+import { asAccount, body, describe, errorSchema, registry, unauthorized } from './registry.js'
 
 // /rosters — army-list sync (routes/rosters.ts, README "Army lists").
 
-const tag = 'Rosters'
-const security = [{ [bearerAuth.name]: [] }]
-const idParam = z.object({ id: rosterIdSchema })
-const unauthorized = { 401: { description: 'No valid access token' } }
+const tags = ['Rosters']
+const security = asAccount
+const params = z.object({ id: rosterIdSchema })
 
 registry.register('RosterListEntry', rosterListEntrySchema)
 registry.register('Roster', rosterSchema)
 
-registry.registerPath({
+describe({
   method: 'get',
   path: '/rosters',
-  tags: [tag],
+  tags,
   summary: 'Every list of the account, metadata only — tombstones included',
   security,
   request: { query: listQuerySchema },
   responses: {
-    200: { description: 'Live lists and deleted ones, newest first', ...json(z.object({ rosters: z.array(rosterListEntrySchema) })) },
-    400: { description: 'Bad query', ...errorBody('bad_query') },
+    200: { description: 'Live lists and deleted ones, newest first', schema: z.object({ rosters: z.array(rosterListEntrySchema) }) },
+    400: { description: 'Bad query', schema: errorSchema('bad_query') },
     ...unauthorized,
   },
 })
 
-registry.registerPath({
+describe({
   method: 'get',
   path: '/rosters/{id}',
-  tags: [tag],
+  tags,
   summary: 'One list, as the client uploaded it',
   security,
-  request: { params: idParam },
+  request: { params },
   responses: {
-    200: { description: 'The stored list', ...json(rosterSchema) },
-    400: { description: 'Bad id', ...errorBody('bad_id') },
-    404: { description: 'No such list (or deleted)', ...errorBody('not_found') },
+    200: { description: 'The stored list', schema: rosterSchema },
+    400: { description: 'Bad id', schema: errorSchema('bad_id') },
+    404: { description: 'No such list (or deleted)', schema: errorSchema('not_found') },
     ...unauthorized,
   },
 })
 
-registry.registerPath({
+describe({
   method: 'put',
   path: '/rosters/{id}',
-  tags: [tag],
+  tags,
   summary: 'Save a list (create or overwrite)',
   description: 'A wizard draft (`draft: true`) is refused: it never leaves the device it was started on.',
   security,
-  request: { params: idParam, body: { required: true, ...json(rosterSchema) } },
+  request: { params, body: body(rosterSchema) },
   responses: {
-    200: { description: 'Saved', ...json(z.object({ ok: z.literal(true), rosterId: rosterIdSchema })) },
-    400: { description: 'Bad id or not JSON', ...errorBody('bad_id', 'invalid_json') },
-    409: { description: 'The account already holds the maximum number of lists', ...errorBody('quota_exceeded') },
-    413: { description: 'The list is over the size cap', ...errorBody('payload_too_large') },
-    422: { description: 'Not a list, a draft, or the body’s id is not the path’s', ...errorBody('invalid_roster', 'id_mismatch') },
+    200: { description: 'Saved', schema: z.object({ ok: z.literal(true), rosterId: rosterIdSchema }) },
+    400: { description: 'Bad id or not JSON', schema: errorSchema('bad_id', 'invalid_json') },
+    409: { description: 'The account already holds the maximum number of lists', schema: errorSchema('quota_exceeded') },
+    413: { description: 'The list is over the size cap', schema: errorSchema('payload_too_large') },
+    422: { description: 'Not a list, a draft, or the body’s id is not the path’s', schema: errorSchema('invalid_roster', 'id_mismatch') },
     ...unauthorized,
   },
 })
 
-registry.registerPath({
+describe({
   method: 'delete',
   path: '/rosters/{id}',
-  tags: [tag],
+  tags,
   summary: 'Delete a list — leaves a tombstone other devices learn from',
   security,
-  request: { params: idParam, query: deleteQuerySchema },
+  request: { params, query: deleteQuerySchema },
   responses: {
-    204: { description: 'Deleted (also when the id was never stored)' },
-    400: { description: 'Bad id or query', ...errorBody('bad_id', 'bad_query') },
+    204: 'Deleted (also when the id was never stored)',
+    400: { description: 'Bad id or query', schema: errorSchema('bad_id', 'bad_query') },
     ...unauthorized,
   },
 })

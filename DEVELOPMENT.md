@@ -96,13 +96,18 @@ into **Authorize** (it survives a reload).
 
 It exists on the stand only — `SWAGGER: "1"` in `docker-compose.yml`, like `DEV_JWT`; without the
 flag the two routes are not registered, and the production image does not even install the packages
-(`devDependencies`). It is generated from the code's own zod schemas (`src/openapi/`): the request
-schemas are the ones the routes validate with, the response schemas are the ones the repos' return
-types are inferred from — so it cannot quietly disagree with the code.
+(`devDependencies`). It is generated from the code's own zod schemas (`src/openapi/`): a request is
+described by the schema the route validates with, and where an answer has a type in `domain/`
+(the roster, game and marks lists) that type is inferred from the described schema.
 
-**A new route** is described in `src/openapi/<area>.ts` (copy `rosters.ts`): export the route's zod
-schemas and read them there, never restate them. `test/openapi.test.ts` fails on a route the
-description does not list; its `PENDING` set holds the routes not described yet and only shrinks.
+**On the stand every JSON answer is checked against its description** as it goes out: an answer
+that does not match, or a status nobody described, is a `[openapi]` line in `npm run stand:logs`.
+The answer itself is untouched. `test/openapi-check.test.ts` makes that check fire.
+
+**A new route** is described in `src/openapi/<area>.ts` with `describe()` (copy `rosters.ts`):
+export the route's zod schemas and read them there, never restate them. `test/openapi.test.ts`
+fails on a route the description does not list. The exact thresholds of the abuse fences are not
+written into descriptions — a route says it can answer 429, and that is all.
 
 ## Everyday commands (in wh11ed-api)
 

@@ -24,6 +24,9 @@ import { originAllowed, siteOf, startSession } from './auth.js'
 
 export const emailAuthRoutes = new Hono<{ Variables: AuthVars }>()
 
+// The body schemas below are exported for the stand's OpenAPI description (src/openapi/), which
+// reads them rather than restating them.
+
 const emailSchema = z.string().trim().min(3).max(254).email()
 const passwordSchema = z.string().min(PASSWORD_MIN).max(PASSWORD_MAX)
 const localeSchema = z.enum(['ru', 'en']).default('ru')
@@ -95,7 +98,7 @@ emailAuthRoutes.use('*', async (c, next) => {
   await next()
 })
 
-const registerSchema = z.object({
+export const registerSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   name: z.string().trim().max(60).optional().default(''),
@@ -123,7 +126,7 @@ emailAuthRoutes.post('/register', async (c) => {
   return c.json({ ok: true, verified: false, mailSent }, 201)
 })
 
-const loginSchema = z.object({ email: emailSchema, password: z.string().min(1).max(PASSWORD_MAX) })
+export const loginSchema = z.object({ email: emailSchema, password: z.string().min(1).max(PASSWORD_MAX) })
 
 emailAuthRoutes.post('/login', async (c) => {
   const parsed = loginSchema.safeParse(await c.req.json().catch(() => null))
@@ -141,7 +144,7 @@ emailAuthRoutes.post('/login', async (c) => {
   return c.json({ ok: true, verified: !!login.verified_at })
 })
 
-const tokenSchema = z.object({ token: z.string().min(20).max(100) })
+export const tokenSchema = z.object({ token: z.string().min(20).max(100) })
 
 emailAuthRoutes.post('/verify', async (c) => {
   const parsed = tokenSchema.safeParse(await c.req.json().catch(() => null))
@@ -153,7 +156,7 @@ emailAuthRoutes.post('/verify', async (c) => {
   return c.json({ ok: true })
 })
 
-const forgotSchema = z.object({ email: emailSchema, locale: localeSchema, origin: z.string().max(200).optional() })
+export const forgotSchema = z.object({ email: emailSchema, locale: localeSchema, origin: z.string().max(200).optional() })
 
 emailAuthRoutes.post('/forgot', async (c) => {
   const parsed = forgotSchema.safeParse(await c.req.json().catch(() => null))
@@ -169,7 +172,7 @@ emailAuthRoutes.post('/forgot', async (c) => {
   return mailSent ? c.json({ ok: true }) : c.json({ error: 'mail_failed' }, 503)
 })
 
-const resetSchema = z.object({ token: z.string().min(20).max(100), password: passwordSchema })
+export const resetSchema = z.object({ token: z.string().min(20).max(100), password: passwordSchema })
 
 emailAuthRoutes.post('/reset', async (c) => {
   const parsed = resetSchema.safeParse(await c.req.json().catch(() => null))
@@ -186,7 +189,7 @@ emailAuthRoutes.post('/reset', async (c) => {
   return c.json({ ok: true })
 })
 
-const resendSchema = z.object({ locale: localeSchema, origin: z.string().max(200).optional() })
+export const resendSchema = z.object({ locale: localeSchema, origin: z.string().max(200).optional() })
 
 emailAuthRoutes.post('/resend', requireAuth, async (c) => {
   const parsed = resendSchema.safeParse(await c.req.json().catch(() => ({})))
@@ -202,7 +205,7 @@ emailAuthRoutes.post('/resend', requireAuth, async (c) => {
 
 // ── For a signed-in player ─────────────────────────────────────────────────────────────────────
 
-const addSchema = z.object({
+export const addSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   locale: localeSchema,
@@ -226,7 +229,7 @@ emailAuthRoutes.post('/add', requireAuth, async (c) => {
   return c.json({ ok: true, verified: false, mailSent }, 201)
 })
 
-const changeSchema = z.object({ current: z.string().min(1).max(PASSWORD_MAX), password: passwordSchema })
+export const changeSchema = z.object({ current: z.string().min(1).max(PASSWORD_MAX), password: passwordSchema })
 
 /**
  * A new password, the current one required. Every OTHER device is signed out (this one keeps its

@@ -10,23 +10,6 @@ process.env.APP_AFTER_LOGIN_URL ||= 'http://localhost:5173/tracker/auth-callback
 delete process.env.SWAGGER
 delete process.env.DEV_JWT
 
-// Routes not described YET. The list only shrinks: describing one fails this test until its line
-// is removed, and a route added to the app is not let in here.
-const PENDING = new Set([
-  'POST /auth/email/register', 'POST /auth/email/login', 'POST /auth/email/verify', 'POST /auth/email/forgot',
-  'POST /auth/email/reset', 'POST /auth/email/resend', 'POST /auth/email/add', 'POST /auth/email/password',
-  'GET /auth/{provider}/login', 'GET /auth/{provider}/callback', 'POST /auth/refresh', 'POST /auth/logout',
-  'PUT /broadcast/live/{gameId}', 'GET /broadcast/{token}',
-  'GET /changelog', 'POST /feedback',
-  'GET /games', 'GET /games/{id}', 'PUT /games/{id}', 'DELETE /games/{id}',
-  'POST /party', 'POST /party/join', 'GET /party/{id}', 'DELETE /party/{id}', 'POST /party/{id}/sync',
-  'GET /party/{id}/members', 'POST /party/{id}/members/{mid}/kick', 'POST /party/{id}/members/{mid}/seat',
-  'POST /party/{id}/seat', 'POST /party/{id}/reseat', 'POST /party/{id}/leave', 'POST /party/{id}/host',
-  'POST /party/{id}/reclaim', 'GET /party/{id}/invite', 'POST /party/{id}/invite',
-  'GET /games/{id}/broadcast', 'POST /games/{id}/broadcast', 'DELETE /games/{id}/broadcast',
-  'GET /prefs', 'PUT /prefs/{scope}', 'GET /me',
-])
-
 const toOpenApi = (path: string) => path.replace(/:(\w+)/g, '{$1}')
 
 test('/openapi.json and /swagger do not exist without SWAGGER=1', async () => {
@@ -47,10 +30,8 @@ test('the description lists every route the app has', async () => {
     Object.entries(doc.paths).flatMap(([path, ops]) => Object.keys(ops ?? {}).map((m) => `${m.toUpperCase()} ${path}`)),
   )
 
-  const undescribed = [...routes].filter((r) => !described.has(r) && !PENDING.has(r))
+  const undescribed = [...routes].filter((r) => !described.has(r))
   assert.deepEqual(undescribed, [], 'routes with no description — add them to src/openapi/')
   const phantom = [...described].filter((r) => !routes.has(r))
   assert.deepEqual(phantom, [], 'described routes the app does not have')
-  const stale = [...PENDING].filter((r) => described.has(r) || !routes.has(r))
-  assert.deepEqual(stale, [], 'PENDING lines to remove — described now, or gone from the app')
 })

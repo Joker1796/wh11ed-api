@@ -17,7 +17,8 @@ export const gameRoutes = new Hono<{ Variables: AuthVars }>()
 
 gameRoutes.use('*', requireAuth)
 
-const listQuerySchema = z.object({
+// Exported for the stand's OpenAPI description (src/openapi/), which reads it rather than restating it.
+export const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 })
 
