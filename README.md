@@ -336,6 +336,15 @@ than the server. The server holds only the age **public** key; the private one i
 machine (`~/.config/wh-rules/backup-age.key`), so neither a leaked server nor a leaked bucket
 reveals anything. 14 dailies + 12 monthlies.
 
+**Errors from the site** (`POST /errors`, since 2026-10-14 — only from visitors who switched sending
+on): aggregates in `client_errors` / `client_errors_beta`. On the server, from cron in
+`/etc/cron.d/wh-rules-errors` (`EXEC` = `cd /opt/wh-rules && docker compose -f docker-compose.prod.yml exec -T api node --import tsx`):
+`0 6 * * * wh $EXEC scripts/errors-digest.ts 2>&1 | logger -t wh-errors` (the daily mail, 09:00
+Moscow; it also drops rows quiet for 30 days) and `*/10 * * * * wh $EXEC scripts/errors-digest.ts --watch …`
+(the release watch). By hand: `scripts/errors-list.ts [fingerprint] [--beta]`,
+`scripts/errors-resolve.ts <fingerprint> <version> [--beta]`. Stacks are read back through the
+site's hidden source maps in `/opt/wh-rules/sourcemaps/<version>/` (mounted read-only).
+
 **GW update watch** (`deploy/gw-watch.sh`, every 20 minutes from cron, since 2026-10-14): runs
 wh11ed's `scripts/watch-gw.py` from a sparse clone in `/opt/wh-rules/watch/wh11ed` (reset to
 `origin/main` each run) and mails the owner through `scripts/notify.ts` when the App Store

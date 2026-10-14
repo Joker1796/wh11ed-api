@@ -18,6 +18,9 @@
     "seed": "node --env-file-if-exists=.env --import tsx stand/seed.ts",
     "feedback:list": "node --env-file-if-exists=.env --import tsx scripts/feedback-list.ts",
     "feedback:delete": "node --env-file-if-exists=.env --import tsx scripts/feedback-delete.ts",
+    "errors:list": "node --env-file-if-exists=.env --import tsx scripts/errors-list.ts",
+    "errors:resolve": "node --env-file-if-exists=.env --import tsx scripts/errors-resolve.ts",
+    "errors:digest": "node --env-file-if-exists=.env --import tsx scripts/errors-digest.ts",
     "changelog:publish": "node --env-file-if-exists=.env --import tsx scripts/changelog-publish.ts",
     "users:count": "node --env-file-if-exists=.env --import tsx scripts/users-count.ts",
     "dev:jwt": "node --env-file-if-exists=.env --import tsx scripts/dev-jwt.ts",
@@ -34,6 +37,7 @@
     "hono": "^4.6.14",
     "nodemailer": "^10.0.9",
     "postgres": "^3.4.5",
+    "source-map-js": "^1.2.1",
     "tsx": "^4.19.2",
     "zod": "^3.24.1"
   },

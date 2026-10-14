@@ -33,6 +33,10 @@ services:
     environment:
       DATABASE_URL: postgres://wh:${POSTGRES_PASSWORD}@postgres:5432/wh
       PORT: "8787"
+    # The site's hidden source maps, one folder per version (wh11ed deploy.sh copies them): the error
+    # commands read a stack back to the source here. Read-only; created on first use if absent.
+    volumes:
+      - /opt/wh-rules/sourcemaps:/app/sourcemaps:ro
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 10s

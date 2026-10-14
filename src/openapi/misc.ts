@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { changelogEntrySchema, PAGE_DEFAULT, PAGE_MAX, SEMVER } from '../domain/changelog.js'
 import { feedbackSchema } from '../domain/feedback.js'
+import { clientErrorsSchema } from '../domain/clientErrors.js'
 import { asAccount, body, describe, errorSchema, registry, unauthorized } from './registry.js'
 
 // The small public and per-account routes: /changelog (routes/changelog.ts), /feedback
@@ -39,6 +40,22 @@ describe({
     400: { description: 'Not JSON', schema: errorSchema('invalid_json') },
     413: { description: 'The message, context or attachment is over its size cap', schema: errorSchema('payload_too_large') },
     422: { description: 'Not a report', schema: errorSchema('invalid_feedback') },
+  },
+})
+
+describe({
+  method: 'post',
+  path: '/errors',
+  tags: ['Feedback'],
+  summary: 'Send the errors a visitor ran into',
+  description:
+    'Only from visitors who switched sending on. No account; nothing about the sender is kept. Sent as `text/plain` (a CORS simple request) holding JSON. Stored as one counted row per error per site version; `hello` counts the day\'s reporting browsers.',
+  request: { body: body(clientErrorsSchema) },
+  responses: {
+    204: { description: 'Received' },
+    413: { description: 'Over 16 KB', schema: errorSchema('payload_too_large') },
+    422: { description: 'Not JSON, or not this shape', schema: errorSchema('invalid_errors') },
+    429: { description: 'Too many batches from one address', schema: errorSchema('too_many') },
   },
 })
 

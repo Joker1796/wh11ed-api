@@ -7,6 +7,7 @@ import { emailAuthRoutes } from './routes/email-auth.js'
 import { broadcastRoutes } from './routes/broadcast.js'
 import { changelogRoutes } from './routes/changelog.js'
 import { feedbackRoutes } from './routes/feedback.js'
+import { clientErrorRoutes } from './routes/clientErrors.js'
 import { gameRoutes } from './routes/games.js'
 import { meRoutes } from './routes/me.js'
 import { partyRoutes } from './routes/party.js'
@@ -94,6 +95,8 @@ app.route('/broadcast', broadcastRoutes)
 app.route('/changelog', changelogRoutes)
 // Public bug reports (anonymous unless a Bearer rides along) — see routes/feedback.ts.
 app.route('/feedback', feedbackRoutes)
+// Errors from visitors who switched sending on — aggregates, nobody identified (routes/clientErrors.ts).
+app.route('/errors', clientErrorRoutes)
 app.route('/games', gameRoutes)
 // A live game shared by several phones. NOT Bearer-gated as a module: POST /party creates one
 // with an account JWT, POST /party/join is public (the invite is the credential), and the rest
