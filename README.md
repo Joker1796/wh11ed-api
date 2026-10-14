@@ -336,6 +336,16 @@ than the server. The server holds only the age **public** key; the private one i
 machine (`~/.config/wh-rules/backup-age.key`), so neither a leaked server nor a leaked bucket
 reveals anything. 14 dailies + 12 monthlies.
 
+**GW update watch** (`deploy/gw-watch.sh`, every 20 minutes from cron, since 2026-10-14): runs
+wh11ed's `scripts/watch-gw.py` from a sparse clone in `/opt/wh-rules/watch/wh11ed` (reset to
+`origin/main` each run) and mails the owner through `scripts/notify.ts` when the App Store
+version, the MFM prices or the downloads on warhammer-community.com change. Google Play is blocked
+from the server and stays in wh11ed's GitHub workflow. Setup on a fresh server: `apt install git`,
+the clone (`git clone --depth 1 --filter=blob:none --no-checkout …/wh11ed.git` +
+`sparse-checkout set --no-cone /scripts/ /src/data/mfm/ /src/data/mfmFactions.js`), `state.json`
+(a missing one records a baseline and mails nothing), and
+`/etc/cron.d/wh-rules-gw-watch`: `*/20 * * * * wh /opt/wh-rules/gw-watch.sh 2>&1 | logger -t wh-gw-watch`.
+
 **Restore** (checked on the stand 2026-10-11 — every table's row count came back equal):
 ```bash
 age -d -i ~/.config/wh-rules/backup-age.key wh-<stamp>.dump.age > wh.dump
