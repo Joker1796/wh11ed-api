@@ -139,7 +139,7 @@ Two things differ from `/rosters`, and both follow from what these are:
 
 The read is one request per visit and carries an `ETag` over the `(scope, version)` pairs: a visit
 that changed nothing is a `304` with no body. Fetching faction by faction would be the wrong trade
-— the gateway's budget is counted in requests, and a whole shelf is a few kilobytes.
+— the per-address limit is counted in requests, and a whole shelf is a few kilobytes.
 
 ### The broadcast feed (for custom overlays)
 
@@ -192,7 +192,7 @@ exposes `ETag`, so a custom HTML/CSS overlay can poll it every second or two and
 ```
 
 **Polling etiquette.** Send `If-None-Match` and poll no faster than once a second: one
-address may make 1200 requests a minute across the WHOLE API (logins, sync and shared games included), and the
+address may make 2400 requests a minute across the WHOLE API (logins, sync and shared games included), and the
 app's own overlay spends 12 of them per viewer at its 5-second cadence. The read protects itself — a
 in-process micro-cache (2 s) means every viewer of one game shares a single database read,
 responses carry `Cache-Control: public, max-age=2`, and a single IP is capped at 60 reads a
@@ -256,14 +256,17 @@ have to travel with them; done with the seat endpoint it would take three calls 
 half way, leaving a guest with no seat and a `403` on everything it writes.
 
 **Cost.** Polling phones are the load, so the reads behind them are shared: a party's state is
-served from process memory for three seconds after a read and dropped on any write to it — every
+served from process memory for two seconds after a read and dropped on any write to it — every
 phone of one party in that window costs one database read. A member's `lastSeenAt` is
 written at most every 30 s. Joins are throttled per address (10 a minute — a code is six digits
 and lives ten minutes, so a guesser sees it expire long before the odds mean anything); syncs per
 MEMBER (60 a minute), never per address, because a tournament hall puts every phone behind one
-NAT. Four phones at a three-second tick are 80 requests a minute for ONE game — the number the
-API-wide ceiling of 1200 a minute per address (`src/lib/rate-limit.ts`) is sized by: a venue's
-shared address carries a dozen games with room to spare.
+NAT. Four phones at a two-second tick are 120 requests a minute for ONE game — the number the
+API-wide ceiling of 2400 a minute per address (`src/lib/rate-limit.ts`) is sized by: a venue's
+shared address carries fifteen four-phone games (sixty phones) with room to spare. The tick and
+the cache window are one number on both sides (the client's `TICK_MS`). Measured on the stand,
+one core: ~2800 idle polls or ~1240 writes a second; production's Xeon is about half that per
+core, and Node uses one — some 1500 phones at once, with headroom.
 
 **Lifetime.** Rows in `parties`, `party_members` and `party_state` expire 7 days past the last
 write (members past their last touch) and are swept (`src/db/sweep.ts`); `DELETE /party/{id}` ends it at once. A
@@ -402,5 +405,5 @@ broken SMTP path can lose a notification but never a report.
   a roster 32 KB and 200 per user, a marks scope 64 KB, a party slice 32 KB, a broadcast 16 KB.
 - Member and refresh tokens stored only as hashes; invite and broadcast tokens are the link itself.
 - Secrets only in the server's environment (never in git); per-IP and per-member throttles where a
-  route is public or polled, and over them one API-wide ceiling per address (1200 a minute,
+  route is public or polled, and over them one API-wide ceiling per address (2400 a minute,
   `429 too_many` with `Retry-After`; `/health` exempt) in place of the Yandex gateway's limit.

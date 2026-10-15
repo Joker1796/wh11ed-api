@@ -89,7 +89,7 @@ export const config = {
   maxPrefsScopeBytes: 64 * 1024,
   maxPrefsScopesPerUser: 80,
   // Live-broadcast payload (the client-projected read-only scoreboard, not the full game) and
-  // how long an untouched broadcast row lives before YDB's TTL sweeps it.
+  // how long an untouched broadcast row lives before the expiry sweep (db/sweep.ts) takes it.
   maxBroadcastBytes: 16 * 1024,
   broadcastTtlDays: 7,
   // A shared live game (routes/party.ts): one slice of a game per write. A whole side after five
@@ -166,10 +166,9 @@ export function isProviderName(v: string): v is ProviderName {
 }
 
 // ─── Host-aware site resolution (domain migration; see wh11ed/MIGRATION.md) ─────────────────
-// One function serves both api.wh11ed.ru and api.wh-rules.ru: the API gateway passes the
-// user-facing Host header through to the function ("the Host header specifies the host used
-// by the user to access the API gateway" — docs/functions/concepts/function-invoke), so the
-// auth routes derive cookies/redirects/OAuth callback per request instead of from the single
+// One process serves both api.wh11ed.ru and api.wh-rules.ru: Caddy passes the user-facing Host
+// header through (it did the same as the Yandex API gateway until 2026-10-11), so the auth
+// routes derive cookies/redirects/OAuth callback per request instead of from the single
 // env-configured domain.
 //
 // Only Hosts matching the `api.<origin-host>` convention of an https ALLOWED_ORIGINS entry
@@ -230,9 +229,9 @@ export function redirectUri(name: ProviderName, site?: Site): string {
 }
 
 // CORS origin policy (used by app.ts). A disallowed Origin gets the canonical origin back
-// instead of no header: when the app omitted Access-Control-Allow-Origin, Yandex's
-// gateway/function layer filled in `*` (+ allow-credentials: true), re-opening what the
-// allow-list closed — and a proxy in front can do the same. An explicit mismatching value keeps
+// instead of no header: when the app omitted Access-Control-Allow-Origin, the Yandex
+// gateway/function layer it ran on until 2026-10-11 filled in `*` (+ allow-credentials: true),
+// re-opening what the allow-list closed — and any proxy in front can do the same. An explicit mismatching value keeps
 // browsers blocking and leaves nothing to fill in. Lives here (not app.ts) so tests can import
 // it without the route graph.
 export function corsOrigin(origin: string): string {

@@ -11,8 +11,8 @@ import { sendFeedbackMail } from '../mail/smtp.js'
 // Reports are read by a human via `npm run feedback:list`; nothing serves them back out.
 export const feedbackRoutes = new Hono()
 
-// Best-effort per-IP throttle in warm-instance memory: enough against a casual flood without
-// a table or a captcha (the gateway's global rate limit backs it up; a cold start forgets —
+// Best-effort per-IP throttle in process memory: enough against a casual flood without a table
+// or a captcha (the API-wide limit, lib/rate-limit.ts, backs it up; a restart forgets —
 // acceptable for an abuse fence, wrong for anything stronger).
 const WINDOW_MS = 10 * 60 * 1000
 const MAX_PER_WINDOW = 5

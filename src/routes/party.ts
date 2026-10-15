@@ -71,15 +71,19 @@ export const partyRoutes = new Hono<Vars>()
 // The three body schemas declared in this file are exported for the stand's OpenAPI description
 // (src/openapi/); the rest live in domain/party.ts.
 
-// ── Warm-instance caches ───────────────────────────────────────────────────────────────────────
-// Four phones on one game poll every three seconds; the gateway charges per request, so the
-// requests themselves are the cost we cannot dodge — but the reads behind them we can share. A
-// party's state is served from memory for STATE_TTL_MS after a read and thrown away on any
-// write to it, so every phone of one party in the same window costs one YDB read. Member rows
+// ── In-process caches ──────────────────────────────────────────────────────────────────────────
+// Up to four phones on one game poll every two seconds (the client's TICK_MS — the two numbers
+// are one decision: a cached state is never older than the tick that asked for it). One Node
+// process serves every phone, so the cache is shared by all of them and always warm; what it
+// saves is the database read behind each poll. A party's state is served from memory for
+// STATE_TTL_MS after a read and thrown away on any write to it, so every phone of one party in
+// the same window costs one Postgres read. Measured 2026-10-16 on the stand, one core: ~2800
+// idle polls a second at 77% CPU, ~1240 writes a second at 100% (hub journal of that day).
+// Member rows
 // are cached a little longer (they change on admin actions, which clear them here) — and the
 // "last seen" stamp the host's list shows is written at most once a TOUCH_EVERY_MS per member,
 // not on every poll.
-const STATE_TTL_MS = 3000
+const STATE_TTL_MS = 2000
 const MEMBER_TTL_MS = 15_000
 const TOUCH_EVERY_MS = 30_000
 
@@ -120,8 +124,8 @@ async function readState(partyId: string, now: number, fresh = false): Promise<C
 // ── Throttles ──────────────────────────────────────────────────────────────────────────────────
 // Joins per address: a code is six digits and lives ten minutes, so a guesser at this rate sees
 // the code expire long before the odds mean anything. Syncs per MEMBER, not per address — a
-// tournament hall puts every phone behind one NAT, and four of them polling every three
-// seconds is a normal evening, not abuse.
+// tournament hall puts every phone behind one NAT, and four of them polling every two seconds
+// is a normal evening, not abuse. 60 a minute leaves a phone room for its sends between ticks.
 const joinThrottled = makeThrottle(10, 60_000)
 const syncThrottled = makeThrottle(60, 60_000)
 

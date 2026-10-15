@@ -52,11 +52,11 @@ broadcastRoutes.put('/live/:gameId', requireAuth, async (c) => {
 })
 
 // ── Protecting the read ───────────────────────────────────────────────────────────────────
-// The gateway's budget is 600 requests a MINUTE for the whole API — logins and sync included —
-// and one overlay at our own 2-second cadence spends 30 of them. So the public read carries
-// two brakes of its own.
+// One address may make RATE_LIMIT_PER_MINUTE requests to the whole API — logins and sync
+// included — and one overlay at our own 2-second cadence spends 30 of them. So the public read
+// carries two brakes of its own.
 //
-// 1. A warm-instance micro-cache: every viewer of one game shares one YDB read per two
+// 1. An in-process micro-cache: every viewer of one game shares one Postgres read per two
 //    seconds instead of one each. Shorter than the built-in overlay's five-second tick, so
 //    nobody ever sees state older than the tick they asked on.
 const READ_TTL_MS = 2000
@@ -73,8 +73,8 @@ async function readBroadcast(token: string, now: number) {
 }
 
 // 2. A per-IP ceiling of one read a second sustained — five times what the built-in overlay
-//    asks for, and tight enough that a runaway client cannot spend the gateway budget the
-//    whole API shares. Warm-instance memory, like the feedback route's: an abuse fence, not
+//    asks for, and tight enough that a runaway client cannot spend the per-address budget the
+//    whole API shares. Process memory, like the feedback route's: an abuse fence, not
 //    an accounting system.
 const RATE_WINDOW_MS = 60 * 1000
 const MAX_READS_PER_MIN = 60

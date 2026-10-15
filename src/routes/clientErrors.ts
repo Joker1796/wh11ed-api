@@ -9,7 +9,7 @@ import { countReporter, recordError } from '../db/clientErrors.repo.js'
 // credentials, a CORS "simple request", so the call survives the tab closing and needs no preflight.
 export const clientErrorRoutes = new Hono()
 
-// The same warm-instance throttle as /feedback: an abuse fence, not accounting. A browser sends a
+// The same in-memory throttle as /feedback: an abuse fence, not accounting. A browser sends a
 // batch at most every few seconds and ten errors per batch, so 30 batches in ten minutes is far
 // above any real page.
 const WINDOW_MS = 10 * 60 * 1000

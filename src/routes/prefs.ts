@@ -14,8 +14,8 @@ import { listPrefs, writePrefsScope } from '../db/prefs.repo.js'
 // and the shape of both follows from one product fact: these are tiny things touched one tap at a
 // time, on several devices, and the player was promised that nothing they mark is ever lost.
 //
-//   GET /            everything, in one request. The scarce resource is REQUESTS (the gateway's
-//                    per-minute budget), not bytes: a whole shelf is a few kilobytes, while
+//   GET /            everything, in one request. The scarce resource is REQUESTS (the API's
+//                    per-address budget), not bytes: a whole shelf is a few kilobytes, while
 //                    fetching it faction by faction would turn one visit into six. An ETag over
 //                    the (scope, version) pairs makes a visit that changed nothing free.
 //   PUT /:scope      one faction (or the pinned list), carrying the version it merged from. A

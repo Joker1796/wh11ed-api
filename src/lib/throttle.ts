@@ -1,4 +1,4 @@
-// A best-effort fixed-window counter in warm-instance memory: `max` hits per key per window,
+// A best-effort fixed-window counter in process memory: `max` hits per key per window,
 // the key being whatever the caller wants to fence (an IP, a member token). An abuse fence, not
 // an accounting system — a restart forgets, and the API-wide ceiling (rate-limit.ts) backs it up.
 // The same recipe the broadcast and feedback routes carry inline; new fences use this one.
@@ -17,7 +17,7 @@ export function makeThrottle(max: number, windowMs: number): (key: string, now: 
   }
 }
 
-/** The client's address as the gateway reports it. */
+/** The client's address as the proxy reports it (Caddy overwrites X-Forwarded-For). */
 export function clientIp(forwardedFor: string | undefined): string {
   return (forwardedFor || '').split(',')[0]?.trim() || 'unknown'
 }
