@@ -6,13 +6,24 @@ import { z } from 'zod'
 // app's first load and out of the installed app's offline download (owner's call, 2026-09-27).
 //
 // An entry is exactly what the frontend file holds: a version, a date, and two parallel note lists
-// (EN/RU) where each item is a bullet string or a `{ h }` section heading. The frontend owns the
+// (EN/RU) where each item is a bullet string or a `{ h, kind?, patch? }` section heading. The frontend owns the
 // wording; this validates only shape, parity and size. Written ONLY by `npm run changelog:publish`
 // (YDB credentials, not HTTP); served by the public GET in routes/changelog.ts.
 
 export const SEMVER = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
 
-const noteSchema = z.union([z.string().min(1), z.object({ h: z.string().min(1) }).strict()])
+// A heading may name its block's kind (the icon and tone it wears — changelogMarks.js
+// SECTION_KINDS) and the GW update it summarises (`patch`, the patch-notes page's id). Until
+// 2026-10-16 only `{ h }` passed, and from 2.8.2 on every entry with them was refused, so the
+// archive stopped moving (the deploy kept them in the file and said so).
+const headingSchema = z
+  .object({
+    h: z.string().min(1),
+    kind: z.string().regex(/^[a-z]{1,20}$/).optional(),
+    patch: z.string().regex(/^[0-9a-z-]{1,20}$/).optional(),
+  })
+  .strict()
+const noteSchema = z.union([z.string().min(1), headingSchema])
 
 export const changelogEntrySchema = z
   .object({

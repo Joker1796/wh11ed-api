@@ -38,6 +38,13 @@ describe('toStored / fromStored', () => {
     assert.throws(() => toStored(entry('2.6.0', { ru: ['Заголовок стал пунктом', 'Пункт.'] })), ChangelogEntryError)
   })
 
+  // A heading names its block's kind and the GW update it summarises (2.8.2 on).
+  it('keeps a heading\'s kind and patch', () => {
+    const e = entry('2.9.4', { en: [{ h: 'Warhammer 40,000 app changes', kind: 'rules', patch: '995' }, 'A note.'], ru: [{ h: 'Изменения приложения Warhammer 40,000', kind: 'rules', patch: '995' }, 'Пункт.'] })
+    assert.deepEqual(fromStored(toStored(e)), e)
+    assert.throws(() => toStored(entry('2.9.4', { en: [{ h: 'X', other: 1 }, 'A note.'] })), ChangelogEntryError)
+  })
+
   it('refuses unknown fields and malformed dates', () => {
     assert.throws(() => toStored(entry('2.6.0', { extra: 1 })), ChangelogEntryError)
     assert.throws(() => toStored(entry('2.6.0', { date: '27.09.2026' })), ChangelogEntryError)
