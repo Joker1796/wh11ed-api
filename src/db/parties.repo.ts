@@ -280,10 +280,12 @@ export async function setMemberRole(partyId: string, memberId: string, role: 'ho
   await db()`UPDATE party_members SET role = ${role} WHERE party_id = ${partyId} AND member_id = ${memberId}`
 }
 
-/** The token dies and the seat is free; the row stays so the host's list can say who left. */
+/** The token dies and the seat is free; the row stays so the host's list can say who left. The
+ *  hash stays too: `revoked_at` is what kills the token, and a phone presenting it must be told it
+ *  was removed (401 'revoked') — not 'invalid_member_token', which is what a closed party says. */
 export async function revokeMember(partyId: string, memberId: string, nowIso: string): Promise<void> {
   await db()`
-    UPDATE party_members SET revoked_at = ${nowIso}, token_hash = '', side = NULL, mi = NULL
+    UPDATE party_members SET revoked_at = ${nowIso}, side = NULL, mi = NULL
     WHERE party_id = ${partyId} AND member_id = ${memberId}`
 }
 

@@ -158,7 +158,7 @@ const fakeRepo = {
   },
   async revokeMember(partyId: string, memberId: string, nowIso: string) {
     const m = members.get(partyId)!.find((x) => x.member_id === memberId)!
-    Object.assign(m, { revoked_at: nowIso, token_hash: '', side: null, mi: null })
+    Object.assign(m, { revoked_at: nowIso, side: null, mi: null })
   },
   async rotateMemberToken(partyId: string, memberId: string, tokenHash: string) {
     const m = members.get(partyId)!.find((x) => x.member_id === memberId)!
@@ -433,6 +433,8 @@ describe('administration', () => {
     assert.equal(kicked.status, 200)
     const after = await app.request(`/party/${p.partyId}/sync`, json({ since: 0 }, g.memberToken))
     assert.equal(after.status, 401)
+    // Told it was removed — a closed party answers 'invalid_member_token', and the phone words the two apart.
+    assert.equal(((await after.json()) as { error: string }).error, 'revoked')
     const g2 = (await join({ code: p.invite.code })).body as { memberToken: string }
     const seat = await app.request(`/party/${p.partyId}/seat`, json({ side: 1, mi: null, name: 'Other' }, g2.memberToken))
     assert.equal(seat.status, 200)
@@ -498,6 +500,9 @@ describe('administration', () => {
     const g = (await join({ code: p.invite.code })).body as { memberToken: string }
     assert.equal((await app.request(`/party/${p.partyId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${g.memberToken}` } })).status, 403)
     assert.equal((await app.request(`/party/${p.partyId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${p.memberToken}` } })).status, 204)
+    const closed = await app.request(`/party/${p.partyId}/sync`, json({ since: 0 }, g.memberToken))
+    assert.equal(closed.status, 401)
+    assert.equal(((await closed.json()) as { error: string }).error, 'invalid_member_token')
     assert.equal((await app.request(`/party/${p.partyId}/sync`, json({ since: 0 }, g.memberToken))).status, 401)
   })
 })
