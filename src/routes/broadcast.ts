@@ -57,8 +57,8 @@ broadcastRoutes.put('/live/:gameId', requireAuth, async (c) => {
 // carries two brakes of its own.
 //
 // 1. An in-process micro-cache: every viewer of one game shares one Postgres read per two
-//    seconds instead of one each. Shorter than the built-in overlay's five-second tick, so
-//    nobody ever sees state older than the tick they asked on.
+//    seconds instead of one each — the built-in overlay's own tick, so nobody sees state older
+//    than one tick.
 const READ_TTL_MS = 2000
 type CachedRead = { at: number; row: { payload: unknown | null; updatedAt: string | null } | null }
 const readCache = new Map<string, CachedRead>()
@@ -72,12 +72,12 @@ async function readBroadcast(token: string, now: number) {
   return row
 }
 
-// 2. A per-IP ceiling of one read a second sustained — five times what the built-in overlay
-//    asks for, and tight enough that a runaway client cannot spend the per-address budget the
-//    whole API shares. Process memory, like the feedback route's: an abuse fence, not
+// 2. A per-IP ceiling of five reads a second sustained — ten overlays at the built-in 2-second
+//    tick (a tournament streaming several tables from one venue address), and still tight enough
+//    that a runaway client cannot spend the per-address budget the whole API shares. Process memory, like the feedback route's: an abuse fence, not
 //    an accounting system.
 const RATE_WINDOW_MS = 60 * 1000
-const MAX_READS_PER_MIN = 60
+const MAX_READS_PER_MIN = 300
 const readHits = new Map<string, number[]>()
 function readThrottled(ip: string, now: number): boolean {
   const hits = (readHits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS)
