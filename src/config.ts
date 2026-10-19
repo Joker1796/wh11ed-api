@@ -75,8 +75,11 @@ export const config = {
     return req('DATABASE_URL')
   },
 
-  // Per-game payload cap and per-user game cap (defence-in-depth limits).
-  maxGameBytes: 64 * 1024,
+  // Per-game payload cap and per-user game cap (defence-in-depth limits). A game carries its log
+  // (the tracker's `acts`, up to 1000 a side at ~150 bytes) and, in doubles, four lists: ~350 KB
+  // at the fullest. The cap was 64 KB while the API ran on YDB; on Postgres a row this size costs
+  // nothing, so it is sized to the game, not to the database (2026-10-19).
+  maxGameBytes: 512 * 1024,
   maxGamesPerUser: 500,
   // Same for army lists. A big list measures well under 12 KB, so 32 KB is roomy; the per-user
   // cap is lower than games' because a collection of lists is curated, not accumulated.
@@ -93,10 +96,10 @@ export const config = {
   maxBroadcastBytes: 16 * 1024,
   broadcastTtlDays: 7,
   // A shared live game (routes/party.ts): one slice of a game per write. A whole side after five
-  // rounds measures ~2 KB and a Strike Force list ~1–2 KB, so 32 KB is roomy without letting a
-  // slice approach the game cap. A party nobody touched for a week is garbage; a join code is
+  // rounds measures ~2 KB and a Strike Force list ~1–2 KB; the side's log adds up to ~150 KB (1000
+  // acts), so 256 KB is roomy and still half the game cap. A party nobody touched for a week is garbage; a join code is
   // typed across a table and dies in minutes.
-  maxPartySliceBytes: 32 * 1024,
+  maxPartySliceBytes: 256 * 1024,
   partyTtlDays: 7,
   partyCodeTtlMinutes: 10,
   // Feedback notifications over plain SMTP (the stand points it at Mailpit). Entirely optional:

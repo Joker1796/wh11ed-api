@@ -65,7 +65,7 @@ SIGTERM.
 **Config (`src/config.ts`):** env-derived values are **lazy getters**, so importing `config` never
 throws — only *accessing* a missing required var does. This keeps the domain layer importable in
 tests without a full env, while preserving fail-fast at the server/handler entrypoints. Plain
-constants (`maxGameBytes` 64 KB, `maxGamesPerUser` 500) are fields. `oauthProvider(name)` returns
+constants (`maxGameBytes` 512 KB, `maxGamesPerUser` 500) are fields. `oauthProvider(name)` returns
 the per-provider OAuth endpoints; add a provider here + in `ProviderName`/`isProviderName`.
 
 **Database access (`src/db/driver.ts`):** `db()` is the one pool per process, made on first use

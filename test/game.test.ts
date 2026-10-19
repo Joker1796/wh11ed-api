@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseGame, extractMetadata, GamePayloadError } from '../src/domain/game.js'
+import { config } from '../src/config.js'
 
 const validGame = {
   id: 'g1718921604000',
@@ -37,6 +38,6 @@ test('parseGame rejects a missing id', () => {
 })
 
 test('parseGame enforces the byte cap', () => {
-  const huge = { id: 'g1', blobblob: 'x'.repeat(70_000) }
+  const huge = { id: 'g1', blobblob: 'x'.repeat(config.maxGameBytes) }
   assert.throws(() => parseGame(huge), GamePayloadError)
 })

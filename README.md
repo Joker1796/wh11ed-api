@@ -401,8 +401,8 @@ broken SMTP path can lose a notification but never a report.
 - A disallowed `Origin` gets the canonical origin back rather than no header (`corsOrigin` in
   `src/config.ts`) — on Yandex's platform an absent header used to be filled in with `*`, and a
   proxy in front could do the same. The one deliberate exception is the public broadcast read.
-- All inputs validated with zod, every blob capped (`src/config.ts`): a game 64 KB and 500 per user,
-  a roster 32 KB and 200 per user, a marks scope 64 KB, a party slice 32 KB, a broadcast 16 KB.
+- All inputs validated with zod, every blob capped (`src/config.ts`): a game 512 KB and 500 per user,
+  a roster 32 KB and 200 per user, a marks scope 64 KB, a party slice 256 KB, a broadcast 16 KB.
 - Member and refresh tokens stored only as hashes; invite and broadcast tokens are the link itself.
 - Secrets only in the server's environment (never in git); per-IP and per-member throttles where a
   route is public or polled, and over them one API-wide ceiling per address (2400 a minute,
