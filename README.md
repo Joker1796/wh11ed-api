@@ -331,7 +331,9 @@ its own iptables rules walk past ufw).
    certificate once its record resolves here — not before, so do not start it with names that still
    point elsewhere for long (Let's Encrypt limits failed attempts).
 
-**A release:** new code into `app/`, then `docker compose -f docker-compose.prod.yml up -d --build api`.
+**A release:** `bash deploy/release.sh [ref]` — `git archive` of the committed ref into `app/` (the
+previous kept as `app.prev`), `docker compose -f docker-compose.prod.yml up -d --build api`, then
+`/health` and the database check (a missing broadcast → 404). `--rollback` puts `app.prev` back.
 Schema first, API second, client last (below).
 
 **Backups** (`deploy/backup.sh`, nightly from cron): `pg_dump` → `age` → S3 at a different company
