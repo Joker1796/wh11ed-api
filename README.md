@@ -350,7 +350,7 @@ Moscow; it also drops rows quiet for 30 days) and `*/10 * * * * wh $EXEC scripts
 `scripts/errors-resolve.ts <fingerprint> <version> [--beta]`. Stacks are read back through the
 site's hidden source maps in `/opt/wh-rules/sourcemaps/<version>/` (mounted read-only).
 
-**Performance from the site** (since 2.10.2, the same `POST /errors` and the same consent): an
+**Performance from the site** (since 2.10.1, the same `POST /errors` and the same consent): an
 optional `perf` array — sent only for screens that looked wrong (a tap of 200 ms or more, or long
 tasks over 2% of the visible time), at most three, once a day per browser — per screen its route pattern, the slowest tap-to-paint
 (`inp`, ms), long tasks (`longN`, `longMs`) and visible seconds (`secs`) — and a coarse `device`
