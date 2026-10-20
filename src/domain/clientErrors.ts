@@ -19,6 +19,19 @@ export const clientErrorSchema = z.object({
   src: z.string().max(300).optional(),
 })
 
+// A screen's performance over one page session (migrations/004_client_perf.sql): its route
+// pattern, the slowest tap-to-paint, the long tasks, the visible seconds. Sent with the errors, by
+// the same browsers, at most MAX_PERF screens a batch.
+export const MAX_PERF = 8
+export const INP_BUCKETS = [100, 200, 500, 1000] as const
+export const clientPerfSchema = z.object({
+  route: z.string().min(1).max(120).regex(/^\/[\w:/().|-]*$/),
+  inp: z.number().int().min(0).max(60000).optional(),
+  longN: z.number().int().min(0).max(100000),
+  longMs: z.number().int().min(0).max(86400000),
+  secs: z.number().int().min(0).max(86400),
+})
+
 export const clientErrorsSchema = z.object({
   channel: z.enum(['prod', 'beta']),
   appVersion: z.string().regex(VERSION),
@@ -29,6 +42,9 @@ export const clientErrorsSchema = z.object({
   // Once a day a reporting browser says so, with or without errors: the day's reporter count.
   hello: z.boolean().optional(),
   errors: z.array(clientErrorSchema).max(MAX_ERRORS).default([]),
+  perf: z.array(clientPerfSchema).max(MAX_PERF).default([]),
+  // Logical cores and device memory, coarse ("c8m4"): what tells a weak phone from a strong one.
+  device: z.string().regex(/^c\d{1,2}m\d{0,2}(\.\d{1,2})?$/).optional(),
 })
 
 export type ClientErrorsPayload = z.infer<typeof clientErrorsSchema>
@@ -88,6 +104,24 @@ export function browserOf(ua?: string): string {
     : /Firefox|FxiOS/.test(ua) ? 'Firefox' : /OPR\//.test(ua) ? 'Opera' : /CriOS|Chrome\//.test(ua) ? 'Chrome'
       : /Safari\//.test(ua) ? 'Safari' : 'other'
   return `${br} ${os}`
+}
+
+/** Which INP bucket (migrations/004_client_perf.sql) a session's slowest tap falls in. */
+export function inpBucket(ms: number): number {
+  const i = INP_BUCKETS.findIndex((b) => ms < b)
+  return i === -1 ? INP_BUCKETS.length : i
+}
+
+/** The p75 of a bucketed histogram, as the bucket's upper edge ("<200 ms"); null with no sessions. */
+export function p75Bucket(hist: number[]): string | null {
+  const total = hist.reduce((s, n) => s + n, 0)
+  if (!total) return null
+  let seen = 0
+  for (let i = 0; i < hist.length; i++) {
+    seen += hist[i] ?? 0
+    if (seen >= total * 0.75) return i < INP_BUCKETS.length ? `<${INP_BUCKETS[i]}` : `≥${INP_BUCKETS[INP_BUCKETS.length - 1]}`
+  }
+  return null
 }
 
 /** Site versions compared as numbers: 2.10.0 is after 2.9.1. */

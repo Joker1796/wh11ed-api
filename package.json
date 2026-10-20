@@ -21,6 +21,7 @@
     "errors:list": "node --env-file-if-exists=.env --import tsx scripts/errors-list.ts",
     "errors:resolve": "node --env-file-if-exists=.env --import tsx scripts/errors-resolve.ts",
     "errors:digest": "node --env-file-if-exists=.env --import tsx scripts/errors-digest.ts",
+    "perf:list": "node --env-file-if-exists=.env --import tsx scripts/perf-list.ts",
     "changelog:publish": "node --env-file-if-exists=.env --import tsx scripts/changelog-publish.ts",
     "users:count": "node --env-file-if-exists=.env --import tsx scripts/users-count.ts",
     "dev:jwt": "node --env-file-if-exists=.env --import tsx scripts/dev-jwt.ts",

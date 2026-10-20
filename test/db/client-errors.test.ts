@@ -57,4 +57,13 @@ describe('POST /errors', () => {
     await db()`UPDATE client_errors SET last_seen = now() - interval '31 days'`
     assert.equal(await purgeErrors(30), 1)
   })
+
+  it('counts a screen\'s sessions up, its slowest taps into the histogram', async () => {
+    const perf = (inp: number | undefined, longMs: number) => ({ route: '/roster/:id', ...(inp == null ? {} : { inp }), longN: 1, longMs, secs: 60 })
+    assert.equal(await send({ channel: 'prod', appVersion: '2.10.2', device: 'c8m4', perf: [perf(80, 100), perf(450, 300)] }, 'Mozilla/5.0 (Linux; Android 14) Chrome/130.0 Mobile Safari/537.36'), 204)
+    assert.equal(await send({ channel: 'prod', appVersion: '2.10.2', device: 'c8m4', perf: [perf(undefined, 0)] }, 'Mozilla/5.0 (Linux; Android 14) Chrome/130.0 Mobile Safari/537.36'), 204)
+    const rows = await db()`SELECT browser, device, sessions, seconds::int AS seconds, inp_hist, long_n::int AS long_n, long_ms::int AS long_ms FROM client_perf`
+    assert.equal(rows.length, 1)
+    assert.deepEqual({ ...rows[0] }, { browser: 'Chrome Android', device: 'c8m4', sessions: 3, seconds: 180, inp_hist: [1, 0, 1, 0, 0], long_n: 3, long_ms: 400 })
+  })
 })
