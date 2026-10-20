@@ -350,6 +350,13 @@ Moscow; it also drops rows quiet for 30 days) and `*/10 * * * * wh $EXEC scripts
 `scripts/errors-resolve.ts <fingerprint> <version> [--beta]`. Stacks are read back through the
 site's hidden source maps in `/opt/wh-rules/sourcemaps/<version>/` (mounted read-only).
 
+**Performance from the site** (since 2.10.2, the same `POST /errors` and the same consent): an
+optional `perf` array — per screen of a page session its route pattern, the slowest tap-to-paint
+(`inp`, ms), long tasks (`longN`, `longMs`) and visible seconds (`secs`) — and a coarse `device`
+(`c8m4`: cores, memory GB). Kept as aggregates in `client_perf` (migration 004), one row per day,
+site, version, screen, browser and device, the slowest taps as a histogram; the digest drops days
+older than 90. Read with `scripts/perf-list.ts [--beta] [--days=7] [--by=browser|device|version]`.
+
 **GW update watch** (`deploy/gw-watch.sh`, every 20 minutes from cron, since 2026-10-14): runs
 wh11ed's `scripts/watch-gw.py` from a sparse clone in `/opt/wh-rules/watch/wh11ed` (reset to
 `origin/main` each run) and mails the owner through `scripts/notify.ts` when the App Store
