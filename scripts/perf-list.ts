@@ -1,12 +1,15 @@
 // How the site performs on visitors' phones (POST /errors `perf`, migrations/004_client_perf.sql),
-// production unless `--beta`, the last `--days` days (7). One line per screen: sessions, the p75 of
+// production unless `--beta`, the last `--days` days (7). The site sends only screens that looked
+// wrong (a tap of 200 ms or more, or long tasks over 2% of the time), once a day per browser, so a
+// row counts slow sessions; the daily hellos of the reporting browsers are the denominator.
+// One line per screen: sessions, the p75 of
 // the slowest tap-to-paint, the share of sessions whose slowest tap took 200 ms or more, and the
 // long tasks per visible minute. `--by=browser|device|version` splits each screen further.
 // Needs DATABASE_URL (on the server: `docker compose … exec -T api node --import tsx scripts/perf-list.ts`).
 import { listPerf, type PerfRow } from '../src/db/clientPerf.repo.js'
 import type { Channel } from '../src/db/clientErrors.repo.js'
 import { p75Bucket } from '../src/domain/clientErrors.js'
-import { closeDb } from '../src/db/driver.js'
+import { closeDb, db } from '../src/db/driver.js'
 
 const args = process.argv.slice(2)
 const channel: Channel = args.includes('--beta') ? 'beta' : 'prod'
@@ -35,5 +38,6 @@ for (const g of list) {
   const perMin = g.seconds ? ((g.long_ms / g.seconds) * 60) / 1000 : 0
   console.log(`${g.key.padEnd(48)} ${String(g.sessions).padStart(5)} sess  p75 tap ${(p75Bucket(g.inp_hist) ?? '—').padStart(6)} ms  slow ${String(slow).padStart(3)}%  long tasks ${perMin.toFixed(1)} s/min`)
 }
-if (list.length) console.log(`\n${list.reduce((s, g) => s + g.sessions, 0)} session(s) since ${since}. Slow = slowest tap ≥200 ms.`)
+const [rep] = await db()<{ n: number }[]>`SELECT COALESCE(SUM(sessions), 0)::int AS n FROM client_error_reporters WHERE channel = ${channel} AND day >= ${since}`
+if (list.length) console.log(`\n${list.reduce((s, g) => s + g.sessions, 0)} slow session(s) since ${since}, out of ${rep?.n ?? 0} reporting browser-days. Slow tap = ≥200 ms.`)
 await closeDb()

@@ -351,7 +351,8 @@ Moscow; it also drops rows quiet for 30 days) and `*/10 * * * * wh $EXEC scripts
 site's hidden source maps in `/opt/wh-rules/sourcemaps/<version>/` (mounted read-only).
 
 **Performance from the site** (since 2.10.2, the same `POST /errors` and the same consent): an
-optional `perf` array — per screen of a page session its route pattern, the slowest tap-to-paint
+optional `perf` array — sent only for screens that looked wrong (a tap of 200 ms or more, or long
+tasks over 2% of the visible time), at most three, once a day per browser — per screen its route pattern, the slowest tap-to-paint
 (`inp`, ms), long tasks (`longN`, `longMs`) and visible seconds (`secs`) — and a coarse `device`
 (`c8m4`: cores, memory GB). Kept as aggregates in `client_perf` (migration 004), one row per day,
 site, version, screen, browser and device, the slowest taps as a histogram; the digest drops days
