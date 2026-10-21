@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { ZodError } from 'zod'
 import { ClientErrorsTooLarge, browserOf, fingerprint, normalizeRoute, parseClientErrors } from '../domain/clientErrors.js'
 import { countReporter, recordError } from '../db/clientErrors.repo.js'
+import { recordPerf } from '../db/clientPerf.repo.js'
 
 // POST /errors — what the site's visitors ran into, from those who switched sending on (it is off
 // by default; the site asks a signed-in player once, after an error). Public: no account, no token,
@@ -53,6 +54,13 @@ clientErrorRoutes.post('/', async (c) => {
       browser,
       route,
       at,
+    })
+  }
+  // The screens' performance, from the same browsers (migrations/004_client_perf.sql).
+  for (const p of payload.perf) {
+    await recordPerf({
+      day: at.slice(0, 10), channel: payload.channel, appVersion: payload.appVersion, route: p.route, browser,
+      device: payload.device ?? 'unknown', inp: p.inp, longN: p.longN, longMs: p.longMs, secs: p.secs,
     })
   }
   return c.body(null, 204)

@@ -8,6 +8,7 @@
 // `--dry-run` prints instead of mailing.
 import { compareVersions, isOpen } from '../src/domain/clientErrors.js'
 import { fingerprintsBefore, listErrors, markAlerted, purgeErrors, reporters, versionStart, type Channel, type ErrorRow } from '../src/db/clientErrors.repo.js'
+import { purgePerf } from '../src/db/clientPerf.repo.js'
 import { decodeStack } from '../src/lib/sourcemaps.js'
 import { sendAdminMail } from '../src/mail/smtp.js'
 import { closeDb } from '../src/db/driver.js'
@@ -16,6 +17,7 @@ const args = process.argv.slice(2)
 const dry = args.includes('--dry-run')
 const CHANNELS: Channel[] = ['prod', 'beta']
 const NAME: Record<Channel, string> = { prod: 'сайт', beta: 'бета' }
+const PERF_RETENTION_DAYS = 90
 const RETENTION_DAYS = 30
 const WATCH_MS = 2 * 3600e3
 const WATCH_COUNT = 3
@@ -70,5 +72,7 @@ if (args.includes('--watch')) {
   if (total) await send(`[WH Rules] Ошибки на сайте: ${total}`, `${parts.join('\n\n')}\n\nПодробно: errors-list <отпечаток> [--beta] · исправлено: errors-resolve <отпечаток> <версия>`)
   else console.log('no open errors in 24 hours')
   if (!dry) console.log(`purged ${await purgeErrors(RETENTION_DAYS)} row(s) older than ${RETENTION_DAYS} days`)
+  // Performance is read as a trend across releases, so it keeps three months (client_perf).
+  if (!dry) console.log(`purged ${await purgePerf(PERF_RETENTION_DAYS)} perf row(s) older than ${PERF_RETENTION_DAYS} days`)
 }
 await closeDb()
