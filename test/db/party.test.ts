@@ -74,7 +74,8 @@ describe('a shared game', () => {
     const sides = Object.fromEntries((await listMembers('p1')).map((m) => [m.member_id, m.side]))
     assert.deepEqual(sides, { host: 1, m2: 0 })
     await revokeMember('p1', 'm2', NOW)
-    assert.equal(await getMemberByToken('t2'), null, 'a revoked token resolves to nobody')
+    // The hash stays on purpose (432bad6): the phone that presents it is told 'revoked'.
+    assert.equal((await getMemberByToken('t2'))?.revoked_at, NOW, 'a revoked token resolves to its revoked seat')
     const m2 = (await listMembers('p1')).find((m) => m.member_id === 'm2')
     assert.deepEqual([m2?.side, m2?.revoked_at], [null, NOW])
     await rotateMemberToken('p1', 'm2', 't2b')
