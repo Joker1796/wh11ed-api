@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # GW update watch on our server: every 20 minutes, mails the owner when Games Workshop ships a new
 # app version in the App Store, re-prices the MFM or posts a document on warhammer-community.com.
-# Google Play is not reachable from here (blocked from Russia) and stays in wh11ed's GitHub workflow.
+# Google Play is not watched (owner, 2026-10-22): it is not reachable from here (blocked from Russia).
 # The check itself is wh11ed's scripts/watch-gw.py; it moved here from GitHub Actions on 2026-10-14,
 # because GitHub ran the hourly schedule hours late (the 2.8.0 app was mailed 4.5 hours after it
 # shipped).
