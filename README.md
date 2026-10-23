@@ -346,17 +346,14 @@ on): aggregates in `client_errors` / `client_errors_beta`. On the server, from c
 `/etc/cron.d/wh-rules-errors` (`EXEC` = `cd /opt/wh-rules && docker compose -f docker-compose.prod.yml exec -T api node --import tsx`):
 `0 6 * * * wh $EXEC scripts/errors-digest.ts 2>&1 | logger -t wh-errors` (the daily mail, 09:00
 Moscow; it also drops rows quiet for 30 days) and `*/10 * * * * wh $EXEC scripts/errors-digest.ts --watch …`
-(the release watch). By hand: `scripts/errors-list.ts [fingerprint] [--beta]`,
+(the release watch). In the daily mail a file that failed to load (`chunk`, a tab from before a
+release) is one line per version, not an entry each; a route is stored without `/ru`. By hand: `scripts/errors-list.ts [fingerprint] [--beta]`,
 `scripts/errors-resolve.ts <fingerprint> <version> [--beta]`. Stacks are read back through the
 site's hidden source maps in `/opt/wh-rules/sourcemaps/<version>/` (mounted read-only).
 
-**Performance from the site** (since 2.10.1, the same `POST /errors` and the same consent): an
-optional `perf` array — sent only for screens that looked wrong (a tap of 200 ms or more, or long
-tasks over 2% of the visible time), at most three, once a day per browser — per screen its route pattern, the slowest tap-to-paint
-(`inp`, ms), long tasks (`longN`, `longMs`) and visible seconds (`secs`) — and a coarse `device`
-(`c8m4`: cores, memory GB). Kept as aggregates in `client_perf` (migration 004), one row per day,
-site, version, screen, browser and device, the slowest taps as a histogram; the digest drops days
-older than 90. Read with `scripts/perf-list.ts [--beta] [--days=7] [--by=browser|device|version]`.
+**Performance from the site** was collected from 2.10.1 to 2.10.3 (`client_perf`, migration 004)
+and dropped by the owner on 2026-10-23 (migration 005 removes the table); a site still sending
+`perf`/`device` has them stripped like any unknown key.
 
 **GW update watch** (`deploy/gw-watch.sh`, every 20 minutes from cron, since 2026-10-14): runs
 wh11ed's `scripts/watch-gw.py` from a sparse clone in `/opt/wh-rules/watch/wh11ed` (reset to

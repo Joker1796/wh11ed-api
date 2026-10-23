@@ -8,7 +8,6 @@
 // `--dry-run` prints instead of mailing.
 import { compareVersions, isOpen } from '../src/domain/clientErrors.js'
 import { fingerprintsBefore, listErrors, markAlerted, purgeErrors, reporters, versionStart, type Channel, type ErrorRow } from '../src/db/clientErrors.repo.js'
-import { purgePerf } from '../src/db/clientPerf.repo.js'
 import { decodeStack } from '../src/lib/sourcemaps.js'
 import { sendAdminMail } from '../src/mail/smtp.js'
 import { closeDb } from '../src/db/driver.js'
@@ -17,7 +16,6 @@ const args = process.argv.slice(2)
 const dry = args.includes('--dry-run')
 const CHANNELS: Channel[] = ['prod', 'beta']
 const NAME: Record<Channel, string> = { prod: 'сайт', beta: 'бета' }
-const PERF_RETENTION_DAYS = 90
 const RETENTION_DAYS = 30
 const WATCH_MS = 2 * 3600e3
 const WATCH_COUNT = 3
@@ -59,20 +57,25 @@ if (args.includes('--watch')) {
   const parts: string[] = []
   let total = 0
   for (const ch of CHANNELS) {
-    const rows = (await listErrors(ch, since)).filter(isOpen)
-    if (!rows.length) continue
-    total += rows.length
+    const open = (await listErrors(ch, since)).filter(isOpen)
+    if (!open.length) continue
+    // A file that failed to load is, nearly always, a tab opened before a release asking for the
+    // files it replaced (staleChunks.js reloads it): one line, not an entry each. A release that
+    // really lost a file shows in its own version within minutes — the watch above mails that.
+    const chunks = open.filter((r) => r.kind === 'chunk')
+    const rows = open.filter((r) => r.kind !== 'chunk')
     const fresh = rows.filter((r) => r.first_seen >= since)
     const old = rows.filter((r) => r.first_seen < since)
+    total += rows.length // a day of nothing but stale tabs sends no mail
     const who = (await reporters(ch, yesterday)) + (await reporters(ch, today))
+    const byVersion = chunks.reduce<Record<string, number>>((o, r) => ({ ...o, [`v${r.app_version}`]: (o[`v${r.app_version}`] ?? 0) + r.count }), {})
     parts.push(`══ ${NAME[ch]} — ${rows.length} ошиб., отправку включили ~${who} сеанс(ов) за сутки ══` +
       (fresh.length ? `\n\nНовые:\n${fresh.map(describe).join('\n\n')}` : '') +
-      (old.length ? `\n\nЕщё случаются:\n${old.map(describe).join('\n\n')}` : ''))
+      (old.length ? `\n\nЕщё случаются:\n${old.map(describe).join('\n\n')}` : '') +
+      (chunks.length ? `\n\nНе загрузились файлы (вкладки до выката): ${top(byVersion, 5)}` : ''))
   }
   if (total) await send(`[WH Rules] Ошибки на сайте: ${total}`, `${parts.join('\n\n')}\n\nПодробно: errors-list <отпечаток> [--beta] · исправлено: errors-resolve <отпечаток> <версия>`)
   else console.log('no open errors in 24 hours')
   if (!dry) console.log(`purged ${await purgeErrors(RETENTION_DAYS)} row(s) older than ${RETENTION_DAYS} days`)
-  // Performance is read as a trend across releases, so it keeps three months (client_perf).
-  if (!dry) console.log(`purged ${await purgePerf(PERF_RETENTION_DAYS)} perf row(s) older than ${PERF_RETENTION_DAYS} days`)
 }
 await closeDb()

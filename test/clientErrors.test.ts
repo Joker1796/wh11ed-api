@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { browserOf, compareVersions, fingerprint, inpBucket, isOpen, normalizeMessage, normalizeRoute, p75Bucket, parseClientErrors, topFrame, ClientErrorsTooLarge, MAX_BODY_BYTES } from '../src/domain/clientErrors.js'
+import { browserOf, compareVersions, fingerprint, isOpen, normalizeMessage, normalizeRoute, parseClientErrors, topFrame, ClientErrorsTooLarge, MAX_BODY_BYTES } from '../src/domain/clientErrors.js'
 
 const chrome = `TypeError: Cannot read properties of undefined (reading 'units')
     at loadArmy (https://wh-rules.ru/assets/RosterEditorView-BJ-1xCnO.js:12:345)
@@ -27,8 +27,14 @@ describe('client errors: the same error is one row', () => {
 
 describe('client errors: nothing about the sender is kept', () => {
   it('drops the query and the hash of a route and folds ids', () => {
-    assert.equal(normalizeRoute('/ru/roster/shared#r=1.abcdef'), '/ru/roster/shared')
-    assert.equal(normalizeRoute('/ru/roster/1a2b3c4d-1111-2222-3333-444455556666/view?x=1'), '/ru/roster/:id/view')
+    assert.equal(normalizeRoute('/ru/roster/shared#r=1.abcdef'), '/roster/shared')
+    assert.equal(normalizeRoute('/ru/roster/1a2b3c4d-1111-2222-3333-444455556666/view?x=1'), '/roster/:id/view')
+  })
+  it('one page in both languages is one place', () => {
+    assert.equal(normalizeRoute('/ru'), '/')
+    assert.equal(normalizeRoute('/ru/'), '/')
+    assert.equal(normalizeRoute('/rules'), '/rules')
+    assert.equal(normalizeRoute('/rules/ru'), '/rules/ru')
   })
   it('keeps a browser family and a system, not the user agent', () => {
     assert.equal(browserOf('Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1'), 'Safari iOS')
@@ -65,22 +71,9 @@ describe('client errors: versions', () => {
   })
 })
 
-describe('client perf: what a screen took on a visitor phone', () => {
-  it('reads a perf batch beside the errors, and none at all', () => {
-    const p = parseClientErrors(JSON.stringify({ channel: 'prod', appVersion: '2.10.2', device: 'c8m4', perf: [{ route: '/roster/:id', inp: 240, longN: 3, longMs: 410, secs: 95 }] }))
-    assert.equal(p.perf.length, 1)
-    assert.equal(p.device, 'c8m4')
-    assert.deepEqual(parseClientErrors(JSON.stringify({ channel: 'prod', appVersion: '2.10.2' })).perf, [])
-  })
-  it('refuses an address in place of a route pattern', () => {
-    assert.throws(() => parseClientErrors(JSON.stringify({ channel: 'prod', appVersion: '2.10.2', perf: [{ route: '/roster/shared#r=1.secret', longN: 0, longMs: 0, secs: 1 }] })))
-    assert.throws(() => parseClientErrors(JSON.stringify({ channel: 'prod', appVersion: '2.10.2', perf: [{ route: '/x?a=1', longN: 0, longMs: 0, secs: 1 }] })))
-  })
-  it('buckets the slowest tap and reads the p75 back', () => {
-    assert.deepEqual([50, 100, 199, 300, 999, 1000, 5000].map(inpBucket), [0, 1, 1, 2, 3, 4, 4])
-    assert.equal(p75Bucket([10, 0, 0, 0, 0]), '<100')
-    assert.equal(p75Bucket([1, 1, 1, 1, 0]), '<500')
-    assert.equal(p75Bucket([0, 0, 0, 0, 2]), '≥1000')
-    assert.equal(p75Bucket([0, 0, 0, 0, 0]), null)
+describe('client perf: gone since 2026-10-23', () => {
+  it('a site still sending timings is read as errors only', () => {
+    const p = parseClientErrors(JSON.stringify({ channel: 'prod', appVersion: '2.10.3', device: 'c8m4', perf: [{ route: '/roster/:id', inp: 240, longN: 3, longMs: 410, secs: 95 }] }))
+    assert.deepEqual(p, { channel: 'prod', appVersion: '2.10.3', errors: [] })
   })
 })
