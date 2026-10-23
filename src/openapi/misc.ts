@@ -2,12 +2,12 @@ import { z } from 'zod'
 import { changelogEntrySchema, PAGE_DEFAULT, PAGE_MAX, SEMVER } from '../domain/changelog.js'
 import { feedbackSchema } from '../domain/feedback.js'
 import { clientErrorsSchema } from '../domain/clientErrors.js'
-import { asAccount, body, describe, errorSchema, registry, unauthorized } from './registry.js'
+import { asAccount, body, component, describe, errorSchema, unauthorized } from './registry.js'
 
 // The small public and per-account routes: /changelog (routes/changelog.ts), /feedback
 // (routes/feedback.ts), /me (routes/me.ts).
 
-registry.register('ChangelogEntry', changelogEntrySchema)
+component('ChangelogEntry', changelogEntrySchema)
 
 describe({
   method: 'get',

@@ -1,13 +1,13 @@
 import { z } from 'zod'
 import { prefsPutSchema, prefsScopeRowSchema, prefsScopeSchema } from '../domain/prefs.js'
-import { asAccount, body, describe, errorSchema, registry, unauthorized } from './registry.js'
+import { asAccount, body, component, describe, errorSchema, unauthorized } from './registry.js'
 
 // /prefs — a player's own marks: pinned factions, favourite datasheets, the collection
 // (routes/prefs.ts, README "A player's marks").
 
 const tags = ['Marks']
 
-registry.register('PrefsScope', prefsScopeRowSchema)
+component('PrefsScope', prefsScopeRowSchema)
 
 describe({
   method: 'get',

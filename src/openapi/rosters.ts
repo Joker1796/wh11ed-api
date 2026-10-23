@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { rosterIdSchema, rosterListEntrySchema, rosterSchema } from '../domain/roster.js'
 import { deleteQuerySchema, listQuerySchema } from '../routes/rosters.js'
-import { asAccount, body, describe, errorSchema, registry, unauthorized } from './registry.js'
+import { asAccount, body, component, describe, errorSchema, unauthorized } from './registry.js'
 
 // /rosters — army-list sync (routes/rosters.ts, README "Army lists").
 
@@ -9,8 +9,8 @@ const tags = ['Rosters']
 const security = asAccount
 const params = z.object({ id: rosterIdSchema })
 
-registry.register('RosterListEntry', rosterListEntrySchema)
-registry.register('Roster', rosterSchema)
+component('RosterListEntry', rosterListEntrySchema)
+component('Roster', rosterSchema)
 
 describe({
   method: 'get',

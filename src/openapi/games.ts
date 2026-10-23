@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { gameIdSchema, gameMetadataSchema, gameSchema } from '../domain/game.js'
 import { broadcastTokenSchema } from '../domain/broadcast.js'
 import { listQuerySchema } from '../routes/games.js'
-import { asAccount, body, describe, errorSchema, registry, unauthorized } from './registry.js'
+import { asAccount, body, component, describe, errorSchema, unauthorized } from './registry.js'
 
 // /games — finished-game backup, and turning a game's live broadcast on and off
 // (routes/games.ts, README "API").
@@ -12,8 +12,8 @@ const security = asAccount
 const params = z.object({ id: gameIdSchema })
 const badId = { 400: { description: 'Bad id', schema: errorSchema('bad_id') } }
 
-registry.register('GameMetadata', gameMetadataSchema)
-registry.register('Game', gameSchema)
+component('GameMetadata', gameMetadataSchema)
+component('Game', gameSchema)
 
 describe({
   method: 'get',

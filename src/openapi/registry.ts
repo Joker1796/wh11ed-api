@@ -19,6 +19,12 @@ extendZodWithOpenApi(z)
 
 export const registry = new OpenAPIRegistry()
 
+// A named component. zod 4 gives `.openapi` only to schemas made after extendZodWithOpenApi, and
+// the domain's are made before it, so `registry.register` throws on them — a clone is made now.
+export function component(name: string, schema: z.ZodType): void {
+  registry.register(name, schema.clone())
+}
+
 export const bearerAuth = registry.registerComponent('securitySchemes', 'bearerAuth', {
   type: 'http',
   scheme: 'bearer',

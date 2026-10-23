@@ -4,7 +4,7 @@ import {
   seatBodySchema, SLICE_NAMES, syncBodySchema,
 } from '../domain/party.js'
 import { hostSeatSchema, inviteBodySchema, transferSchema } from '../routes/party.js'
-import { asAccount, asMember, body, describe, errorSchema, registry, unauthorized } from './registry.js'
+import { asAccount, asMember, body, component, describe, errorSchema, unauthorized } from './registry.js'
 
 // /party — one live game shared by several phones (routes/party.ts, domain/party.ts, README "A
 // shared live game"). The host's account creates a party and can reclaim it; after that every
@@ -38,8 +38,8 @@ const trackerVersion = z.object({ error: z.literal('tracker_version'), gen: z.nu
 })
 const fullState = { seq, status, slices, members: z.array(member) }
 
-registry.register('PartyCreate', createBodySchema)
-registry.register('PartySync', syncBodySchema)
+component('PartyCreate', createBodySchema)
+component('PartySync', syncBodySchema)
 
 // Every member route answers these when its token does not hold.
 const memberRefusals = {
