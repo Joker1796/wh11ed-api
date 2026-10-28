@@ -14,3 +14,6 @@ deploy.secrets
 *.tfvars
 *.auto.tfvars
 *.log
+
+# mutation-testing output (tools/mutator in the hub)
+/.metrics/
